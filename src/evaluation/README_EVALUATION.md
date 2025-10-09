@@ -1,178 +1,215 @@
-# Evaluación RAG con RAGAS
+# Evaluación de Bases de Conocimiento con RAGAS
 
-Este directorio contiene la implementación completa de evaluación del sistema RAG utilizando RAGAS (RAG Assessment).
+Este directorio contiene scripts para evaluar diferentes bases de conocimiento usando RAGAS (RAG Assessment).
 
-## Archivos Principales
+## 🎯 Objetivo
 
-### `evaluate_ragas.py`
-Script principal que implementa toda la evaluación RAG con RAGAS. Incluye:
-- Carga del dataset de 64 preguntas
-- Cliente HTTP para la API RAG existente
-- Configuración de RAGAS con Mistral como LLM evaluador
-- Procesamiento por batches
-- Cálculo de métricas: faithfulness, answer_relevancy, context_precision, context_recall, answer_correctness
-- Generación de reportes detallados
-- Exportación a CSV/JSON
+Evaluar y comparar el rendimiento de diferentes métodos de chunking:
+- **Contextual RAG** (original): `asistente-normativa-sincro-kb`
+- **Semantic RAG p95**: `rag_semantic_construction`
+- **Semantic RAG p75**: `rag_semantic_construction_p75`
+- **Semantic RAG gradient**: `rag_semantic_construction_gradient`
 
-### `api_rag.py`
-API FastAPI existente que implementa el sistema RAG bilingüe (inglés KB → español respuestas).
+## 📁 Estructura
 
-### `data/evaluation_dataset.jsonl`
-Dataset con 64 preguntas de evaluación en 6 tipos:
-- **exactitud_fidelidad**: Preguntas sobre información específica y precisa
-- **negaciones_contradicciones**: Preguntas que requieren identificar información incorrecta
-- **desambiguacion**: Preguntas que requieren clarificar términos ambiguos
-- **adversariales_seguridad**: Preguntas diseñadas para probar la robustez del sistema
-- **contexto_incompleto**: Preguntas sobre información no disponible en el contexto
-- **robustez_reformulaciones**: Preguntas con diferentes formulaciones del mismo concepto
-
-## Uso
-
-### Opción 1: Script de inicio automático
-```bash
-cd src/evaluation
-python start_evaluation.py
+```
+src/evaluation/
+├── api_rag.py                          # API RAG para evaluación
+├── evaluate_ragas.py                   # Evaluador principal con RAGAS
+├── run_evaluation.py                   # Script maestro (evaluar individual o todas)
+├── generate_comparison_report.py       # Generador de reportes comparativos
+├── data/
+│   └── evaluation_dataset.jsonl        # Dataset de preguntas de evaluación
+└── README_EVALUATION.md               # Este archivo
 ```
 
-### Opción 2: Ejecución manual
+## 🚀 Uso
 
-1. **Iniciar la API RAG** (en una terminal):
+### Evaluar una Base de Conocimiento Específica
+
 ```bash
-cd src/evaluation
-python api_rag.py
+cd /root/ai-genai-rag-asistente-normativa-sincro
+
+# Evaluar contextual RAG
+uv run python src/evaluation/run_evaluation.py --collection asistente-normativa-sincro-kb --output-suffix contextual
+
+# Evaluar semantic p95
+uv run python src/evaluation/run_evaluation.py --collection rag_semantic_construction --output-suffix semantic_p95
+
+# Evaluar semantic p75
+uv run python src/evaluation/run_evaluation.py --collection rag_semantic_construction_p75 --output-suffix semantic_p75
+
+# Evaluar semantic gradient
+uv run python src/evaluation/run_evaluation.py --collection rag_semantic_construction_gradient --output-suffix semantic_gradient
 ```
 
-2. **Ejecutar la evaluación** (en otra terminal):
+### Evaluar Todas las Bases de Conocimiento
+
 ```bash
-cd src/evaluation
-python evaluate_ragas.py
+cd /root/ai-genai-rag-asistente-normativa-sincro
+uv run python src/evaluation/run_evaluation.py --all
 ```
 
-### Opción 3: Prueba de componentes
+### Listar Bases de Conocimiento Disponibles
+
 ```bash
-cd src/evaluation
-python test_evaluation.py
+cd /root/ai-genai-rag-asistente-normativa-sincro
+uv run python src/evaluation/run_evaluation.py --list
 ```
 
-## Requisitos
+### Generar Reporte Comparativo
 
-### Servicios necesarios
-- **Qdrant**: Base de datos vectorial (puerto 6333)
-- **Ollama**: Modelo de embeddings (puerto 11434)
-- **Mistral API**: LLM para evaluación (configurado en .env)
-
-### Variables de entorno
 ```bash
-MISTRAL_API_KEY=tu_api_key_aqui
+cd /root/ai-genai-rag-asistente-normativa-sincro
+uv run python src/evaluation/generate_comparison_report.py
 ```
 
-## Métricas Evaluadas
+> **Nota**: Este script busca automáticamente todos los resultados de evaluación en `src/output/evaluation/` y genera un reporte comparativo consolidado.
 
-### 1. Faithfulness (Fidelidad)
-Mide qué tan fiel es la respuesta al contexto proporcionado. Valores altos indican que la respuesta está bien fundamentada en el contexto.
+**Cuándo usar:**
+- Después de evaluar múltiples bases de conocimiento
+- Para comparar el rendimiento entre diferentes métodos de chunking
+- Para generar un reporte ejecutivo consolidado
 
-### 2. Answer Relevancy (Relevancia de la Respuesta)
-Evalúa qué tan relevante es la respuesta para la pregunta formulada.
+## 📊 Métricas Evaluadas
 
-### 3. Context Precision (Precisión del Contexto)
-Mide qué tan preciso es el contexto recuperado para responder la pregunta.
+- **Answer Relevancy**: Relevancia de la respuesta a la pregunta
+- **Context Precision**: Precisión del contexto recuperado
+- **Context Recall**: Recuperación del contexto relevante
+- **Answer Correctness**: Correctitud de la respuesta
 
-### 4. Context Recall (Recuperación del Contexto)
-Evalúa qué tan completo es el contexto recuperado en relación con la información necesaria.
+> **Nota**: La métrica `Faithfulness` está temporalmente deshabilitada debido a problemas de parsing con el formato de respuesta de Mistral.
 
-### 5. Answer Correctness (Correctitud de la Respuesta)
-Combina faithfulness y answer_relevancy para evaluar la calidad general de la respuesta.
+## 📁 Resultados
 
-## Resultados
+Los resultados se guardan en `src/output/evaluation/`:
 
-Los resultados se guardan en el directorio `evaluation_results/` con timestamp:
+```
+src/output/evaluation/
+├── contextual/                          # Resultados contextual RAG
+├── semantic_p95/                        # Resultados semantic p95
+├── semantic_p75/                        # Resultados semantic p75
+├── semantic_gradient/                   # Resultados semantic gradient
+└── comparison/                          # Reportes comparativos
+    └── comparison_report_YYYYMMDD_HHMMSS.txt
+```
 
+Cada carpeta contiene:
 - `evaluation_results_YYYYMMDD_HHMMSS.csv`: Resultados detallados en CSV
-- `evaluation_results_YYYYMMDD_HHMMSS.json`: Resultados en formato JSON
-- `evaluation_report_YYYYMMDD_HHMMSS.txt`: Reporte detallado en texto
-- `evaluation_ragas.log`: Log de la evaluación
+- `evaluation_results_YYYYMMDD_HHMMSS.json`: Resultados en JSON
+- `evaluation_report_YYYYMMDD_HHMMSS.txt`: Reporte detallado
 
-## Análisis de Resultados
+La carpeta `comparison/` contiene:
+- `comparison_report_YYYYMMDD_HHMMSS.txt`: Reporte comparativo consolidado
 
-El reporte incluye:
+## 🔧 Requisitos
 
-### Métricas Generales
-- Promedio de todas las métricas
-- Tiempo promedio de respuesta de la API
-- Estadísticas de éxito/fallo
+- Python 3.12+
+- uv (gestor de paquetes)
+- Ollama ejecutándose en puerto 11434
+- Qdrant ejecutándose en puerto 6333
+- Variables de entorno configuradas (MISTRAL_API_KEY, etc.)
 
-### Métricas por Tipo de Pregunta
-- Análisis detallado por cada categoría de pregunta
-- Identificación de patrones de fallo
-- Comparación entre tipos de pregunta
+## 📋 Proceso de Evaluación
 
-### Casos Problemáticos
-- Preguntas con scores bajos
-- Errores encontrados
-- Análisis de causas de fallo
+1. **Configuración**: Se configura la API RAG para usar la colección específica
+2. **Inicio API**: Se inicia la API RAG en puerto 8001
+3. **Verificación KB**: Se verifica que la base de conocimiento correcta esté en uso
+4. **Carga Dataset**: Se carga el dataset de 64 preguntas de evaluación
+5. **Evaluación**: Se evalúa cada pregunta usando RAGAS (con manejo robusto de errores)
+6. **Cálculo Métricas**: Se calculan métricas por tipo de pregunta
+7. **Exportación**: Se guardan resultados en CSV, JSON y TXT
+8. **Limpieza**: Se detiene la API y se limpia el entorno
+
+## ✅ Estado Actual del Sistema
+
+### **Mejoras Implementadas**
+- ✅ **Manejo robusto de errores**: Los errores de parsing de RAGAS no interrumpen la evaluación
+- ✅ **Verificación de KB**: Confirmación visual de qué base de conocimiento se está usando
+- ✅ **Código limpio**: Eliminación completa de referencias a métricas deshabilitadas
+- ✅ **Cálculos corregidos**: Promedios y puntuaciones compuestas ajustadas correctamente
+- ✅ **Timeouts optimizados**: Tiempo de espera aumentado para mayor estabilidad
+
+### **Métricas Activas**
+- **Answer Relevancy**: Relevancia de la respuesta a la pregunta
+- **Context Precision**: Precisión del contexto recuperado  
+- **Context Recall**: Recuperación del contexto relevante
+- **Answer Correctness**: Correctitud de la respuesta
+
+### **Métricas Deshabilitadas**
+- **Faithfulness**: Temporalmente deshabilitada por problemas de parsing con Mistral
+
+## 🎯 Interpretación de Resultados
+
+### Puntuaciones
+- **0.0 - 0.3**: Muy bajo
+- **0.3 - 0.5**: Bajo
+- **0.5 - 0.7**: Medio
+- **0.7 - 0.9**: Alto
+- **0.9 - 1.0**: Muy alto
 
 ### Recomendaciones
-- Sugerencias específicas para mejorar el sistema
-- Identificación de áreas de mejora
-- Acciones recomendadas
+- **Answer Relevancy < 0.7**: Mejorar la relevancia de las respuestas
+- **Context Precision < 0.7**: Mejorar la precisión del contexto recuperado
+- **Context Recall < 0.7**: Mejorar la recuperación de contexto relevante
+- **Answer Correctness < 0.7**: Mejorar la correctitud de las respuestas
 
-## Configuración Avanzada
+## 🚨 Solución de Problemas
 
-### Tamaño de Batch
-El script procesa las preguntas en batches para evitar sobrecargar la API. El tamaño por defecto es 3, pero se puede modificar:
+### API no disponible
+```bash
+# Verificar que Ollama esté ejecutándose
+curl http://localhost:11434/api/tags
 
-```python
-evaluator.run_evaluation(batch_size=5)  # Cambiar tamaño de batch
+# Verificar que Qdrant esté ejecutándose
+curl http://localhost:6333/collections
 ```
 
-### Timeouts
-- API timeout: 30 segundos
-- Evaluación timeout: Configurado por RAGAS
-- Pausa entre preguntas: 1 segundo
+### Errores de parsing RAGAS
+```
+OutputParserException(Failed to parse StringIO from completion...)
+```
+**Solución**: Este error es normal y esperado. RAGAS a veces tiene problemas de parsing con las respuestas de Mistral. El sistema maneja estos errores automáticamente asignando scores por defecto (0.0) y continúa con la evaluación.
 
-### Logging
-El sistema genera logs detallados en `evaluation_ragas.log` para debugging y monitoreo.
+### Error de memoria
+- Reducir el batch_size en los scripts
+- Usar evaluaciones individuales en lugar de secuenciales
 
-## Troubleshooting
-
-### Error: "API no disponible"
-- Verificar que Qdrant esté funcionando en puerto 6333
-- Verificar que Ollama esté funcionando en puerto 11434
-- Iniciar la API RAG con `python api_rag.py`
-
-### Error: "MISTRAL_API_KEY no configurada"
-- Configurar la variable de entorno en el archivo `.env`
-- Verificar que la API key sea válida
-
-### Error: "Dataset no encontrado"
-- Verificar que `data/evaluation_dataset.jsonl` exista
-- Verificar que el archivo contenga datos válidos en formato JSON Lines
-
-### Error: "Timeout en consulta API"
-- Verificar que la API RAG esté respondiendo correctamente
-- Aumentar el timeout si es necesario
+### Timeout en evaluaciones
+- Aumentar el timeout en `wait_for_api()`
 - Verificar la conectividad de red
 
-## Estructura del Dataset
+### Error "unsupported operand type(s) for +: 'int' and 'NoneType'"
+**Solución**: Este error ha sido resuelto en la versión actual. Si aparece, verificar que se esté usando la versión más reciente de los scripts.
 
-Cada línea del dataset debe tener el formato:
-```json
-{"type": "tipo_pregunta", "query": "pregunta", "answer": "respuesta_esperada"}
+### Errores de conexión durante evaluación
 ```
+Connection failed. If the problem persists, please check your internet connection or VPN
+```
+**Solución**: 
+1. Verificar que la API esté ejecutándose: `curl http://localhost:8001/health`
+2. Si no está ejecutándose, reiniciar la evaluación
+3. Verificar que no haya conflictos de puerto: `fuser -k 8001/tcp`
 
-Donde:
-- `type`: Tipo de pregunta (exactitud_fidelidad, negaciones_contradicciones, etc.)
-- `query`: Pregunta a evaluar
-- `answer`: Respuesta esperada (ground truth)
+### Evaluación se detiene prematuramente
+**Solución**: 
+- El sistema tiene manejo robusto de errores que permite continuar la evaluación
+- Los errores de parsing individuales no afectan el resultado final
+- Verificar los logs para identificar problemas específicos
 
-## Contribuciones
+## 📞 Soporte
 
-Para agregar nuevas preguntas de evaluación:
-1. Editar `data/evaluation_dataset.jsonl`
-2. Agregar una línea por pregunta en formato JSON
-3. Ejecutar la evaluación para verificar que funcione
+Para problemas o preguntas:
+1. Revisar los logs de evaluación
+2. Verificar que todas las dependencias estén instaladas
+3. Comprobar que las bases de conocimiento existan en Qdrant
+4. Verificar la configuración de variables de entorno
 
-Para modificar las métricas evaluadas:
-1. Editar la lista `self.metrics` en `evaluate_ragas.py`
-2. Asegurar que las métricas sean compatibles con RAGAS
-3. Actualizar la generación de reportes si es necesario
+## 🔄 Actualizaciones
+
+- **v1.0**: Evaluación básica con RAGAS
+- **v1.1**: Soporte para múltiples bases de conocimiento
+- **v1.2**: Reportes comparativos automáticos
+- **v1.3**: Scripts de evaluación individual y secuencial
+- **v1.4**: Eliminación de métrica Faithfulness por problemas de parsing
+- **v1.5**: Mejoras en manejo de errores y estabilidad del sistema

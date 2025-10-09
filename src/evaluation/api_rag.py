@@ -6,7 +6,6 @@ import uvicorn
 from fastapi import FastAPI
 from dotenv import load_dotenv
 from llm.mistral_llm import MistralLLM
-from translation.translate import translate_text
 from embeddings.embedding_qdrant import EmbeddingControllerQdrant
 
 project_root = Path(__file__).parent.parent
@@ -18,93 +17,136 @@ app = FastAPI()
 
 # Initialize LLM with Spanish language for user interface
 llm = MistralLLM(api_key=os.getenv("MISTRAL_API_KEY"))
-embedding_admin = EmbeddingControllerQdrant()
 
-def detect_language(text: str) -> str:
-    """Simple language detection for Spanish vs English."""
-    spanish_indicators = ['á', 'é', 'í', 'ó', 'ú', 'ñ', '¿', '¡', 'de', 'la', 'el', 'en', 'y', 'que', 'por', 'con', 'para']
-    text_lower = text.lower()
-    
-    spanish_count = sum(1 for indicator in spanish_indicators if indicator in text_lower)
-    return "español" if spanish_count > 2 else "english"
+# Get collection name from environment variable or use default
+collection_name = os.getenv("QDRANT_COLLECTION_NAME", "asistente-normativa-sincro-kb")
+print(f"🔧 Usando colección: {collection_name}")
+embedding_admin = EmbeddingControllerQdrant(qdrant_collection=collection_name)
+
+@app.get("/health")
+def health():
+    """Health check endpoint"""
+    return {
+        "status": "healthy",
+        "collection": collection_name,
+        "phase": "FASE A - Evaluación KB Mixta"
+    }
 
 @app.post("/rag")
 def rag(data: dict):
     """
-    RAG endpoint implementing English KB + Spanish Q&A workflow.
+    RAG endpoint - FASE A: Evaluación con KB Mixta
     
-    Workflow:
-    1. Detect user question language
-    2. Translate to English if needed for KB search
-    3. Search English KB
-    4. Send English context + English question to LLM
-    5. LLM responds in Spanish (using configured prompts)
+    CAMBIO PRINCIPAL: NO traduce pregunta español→inglés
+    Busca directamente en idioma original de la pregunta
+    
+    Workflow FASE A:
+    1. Recibe pregunta en español (usuario)
+    2. Busca directamente en español (sin traducir)
+    3. Recupera contexto mixto (español + inglés según relevancia)
+    4. LLM procesa contexto mixto y responde en español
+    
+    ADVERTENCIA: Retrieval subóptimo esperado por:
+    - KB mixta (2 docs ES + 2 docs EN)
+    - Embeddings monolingües (nomic-embed-text)
+    - Preguntas en español sobre docs inglés = baja similitud
     """
     question = data.get("question")
     if not question:
         return {"error": "Question is required"}
     
     try:
-        # 1) Detect language and prepare search query
-        detected_language = detect_language(question)
+        # FASE A: NO traducir - buscar en idioma original
+        search_query = question
+        print(f"🔍 FASE A: Búsqueda directa sin traducción")
+        print(f"   Pregunta: '{question[:80]}...'")
         
-        if detected_language == "español":
-            # Translate Spanish question to English for KB search
-            search_query = translate_text(question, "es", "en")
-            print(f"🔄 Spanish question translated to English: '{question[:50]}...' → '{search_query[:50]}...'")
-        else:
-            # Keep English question for KB search
-            search_query = question
-            print(f"🌐 English question used directly for KB search")
-        
-        # 2) Search English KB using search query
+        # Buscar en KB mixta usando pregunta original
         embed_question = embedding_admin.generate_embeddings(search_query)
         context_response = embedding_admin.load_and_query_qdrant(embed_question, top_k=5)
-        context_texts = [match.payload['text'] for match in context_response]
-        english_context = "\n".join(context_texts)
         
-        # Extract context metadata (sources)
+        # Extraer textos de contexto
+        context_texts = [match.payload['text'] for match in context_response]
+        context = "\n".join(context_texts)
+        
+        # Extraer metadatos de fuentes (CRÍTICO para detectar idioma)
         context_sources = []
         for match in context_response:
+            payload = match.payload
+            
+            # Campos comunes a todas las KBs
             source_info = {
-                "text": match.payload.get('text', ''),
-                "book_title": match.payload.get('book_title', 'Unknown'),
-                "page_number": match.payload.get('page_number', 'Unknown'),
-                "chunk_id": match.payload.get('chunk_id', 'Unknown'),
-                "score": match.score
+                "text": payload.get('text', ''),
+                "score": float(match.score)
             }
+            
+            # Detectar tipo de KB por campos disponibles
+            if 'document_name' in payload:
+                # KBs nuevas (recursive, semantic, structural, hybrid)
+                source_info.update({
+                    "document_name": payload.get('document_name', 'Unknown'),
+                    "chunk_index": payload.get('chunk_index', 'Unknown'),
+                    "chunking_method": payload.get('chunking_method', 'Unknown'),
+                    "chunk_size": payload.get('chunk_size', 0),
+                    "chunk_words": payload.get('chunk_words', 0)
+                })
+            elif 'book_title' in payload:
+                # KB contextual (estructura antigua)
+                source_info.update({
+                    "document_name": payload.get('book_title', 'Unknown'),  # Usar book_title como document_name
+                    "book_title": payload.get('book_title', 'Unknown'),
+                    "page_number": payload.get('page_number', 'Unknown'),
+                    "chunk_id": payload.get('chunk_id', 'Unknown'),
+                    "chunk_type": payload.get('chunk_type', 'Unknown')
+                })
+            else:
+                # Fallback si no reconocemos la estructura
+                source_info["document_name"] = "Unknown"
+            
             context_sources.append(source_info)
+            
+        # Debug: Imprimir document_names encontrados
+        doc_names = [s.get('document_name', 'Unknown') for s in context_sources]
+        print(f"   📄 Documentos recuperados: {doc_names}")
         
-        print(f"📚 English KB context retrieved: {len(context_texts)} chunks")
+        print(f"📚 Contexto recuperado: {len(context_texts)} chunks")
         
-        # 3) Keep English context and use English question for optimal LLM processing
-        # The LLM will receive English context + English question but respond in Spanish
-        print(f"🔄 Using English context + English question for optimal LLM processing")
+        # Detectar idiomas en contexto recuperado
+        doc_langs = []
+        for source in context_sources:
+            doc_name = source.get("document_name", "")
+            if any(x in doc_name for x in ["DS NRO 034-2023-EM", "Ley NRO 30947"]):
+                doc_langs.append("ES")
+            elif any(x in doc_name for x in ["FMDS0104", "FMDS0520"]):
+                doc_langs.append("EN")
         
-        # 4) Ensure LLM responds in Spanish
+        print(f"🌐 Idiomas en contexto: {doc_langs}")
+        
+        # LLM procesa contexto mixto y responde en español
         llm.language = "español"
+        answer = llm.mistral_chat(context=context, question=question)
         
-        # 5) Generate Spanish response using English context + English question
-        answer = llm.mistral_chat(context=english_context, question=search_query)
-        
-        print(f"✅ Spanish response generated successfully")
+        print(f"✅ Respuesta generada en español")
+        print(f"⚠️  ADVERTENCIA FASE A: Scores esperados bajos por KB mixta + embeddings monolingües")
         
         return {
             "answer": answer,
             "context": context_texts,
-            "relevant_docs": context_texts,  # Mantener compatibilidad
+            "relevant_docs": context_texts,
             "context_sources": context_sources,
             "workflow_info": {
-                "user_language": detected_language,
-                "search_language": "english",
-                "response_language": "español",
-                "llm_input": "english_context + english_question",
-                "llm_output": "spanish_response"
+                "phase": "FASE A",
+                "search_strategy": "direct_no_translation",
+                "kb_type": "mixed_es_en",
+                "embedding_model": "nomic-embed-text (monolingüe)",
+                "expected_performance": "suboptimal",
+                "context_languages": doc_langs,
+                "response_language": "español"
             }
         }
         
     except Exception as e:
-        print(f"❌ Error in RAG pipeline: {str(e)}")
+        print(f"❌ Error en RAG pipeline: {str(e)}")
         return {
             "error": f"RAG processing failed: {str(e)}",
             "workflow_info": {
@@ -114,4 +156,12 @@ def rag(data: dict):
         }
 
 if __name__ == "__main__":
+    print("="*60)
+    print("🚀 API RAG - FASE A: Evaluación KB Mixta")
+    print("="*60)
+    print(f"📦 Colección: {collection_name}")
+    print(f"⚠️  SIN traducción forzada (busca en idioma original)")
+    print(f"🎯 Objetivo: Comparar 7 métodos de chunking")
+    print(f"📊 Scores esperados: 0.30-0.50 (limitación arquitectural)")
+    print("="*60)
     uvicorn.run(app, host="0.0.0.0", port=8001)
