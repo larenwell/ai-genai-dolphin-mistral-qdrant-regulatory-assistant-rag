@@ -14,7 +14,7 @@ from dotenv import load_dotenv
 from typing import List, Dict, Tuple, Optional
 
 # Add src to path
-sys.path.append(str(Path(__file__).parent.parent / "src"))
+sys.path.append(str(Path(__file__).parent.parent))
 
 from langchain.text_splitter import MarkdownHeaderTextSplitter
 from langchain_experimental.text_splitter import SemanticChunker
@@ -486,7 +486,7 @@ def main():
     markdown_files = [f for f in os.listdir(markdown_dir) if f.endswith('_markdown.md')]
     
     if not markdown_files:
-        print("❌ No se encontraron archivos markdown en src/output/markdown")
+        print("❌ No se encontraron archivos markdown en output/markdown")
         print("   Ejecuta primero: python scripts/generate_markdown.py")
         return
     
@@ -596,8 +596,8 @@ def main():
     if total_processed > 0:
         print(f"\n🎉 Hybrid Chunking completado!")
         print(f"📁 Revisa los resultados en:")
-        print(f"   - src/output/chunking/hybrid_p80_markdown/")
-        print(f"   - src/output/embeddings_preview/hybrid_p80_markdown/")
+        print(f"   - output/chunking/hybrid_p80_markdown/")
+        print(f"   - output/embeddings_preview/hybrid_p80_markdown/")
         print(f"   - Base de conocimiento Qdrant: {COLLECTION_NAME}")
         print(f"\n📊 Configuración utilizada:")
         print(f"   - Modelo: {OLLAMA_MODEL}")

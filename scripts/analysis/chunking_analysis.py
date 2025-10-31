@@ -32,7 +32,7 @@ load_dotenv(project_root / '.env')
 # Configuración
 MISTRAL_API_KEY = os.getenv("MISTRAL_API_KEY")
 PDF_FOLDER_PATH = project_root / "data" / "test"
-OUTPUT_DIR = project_root / "src" / "output" / "process"
+OUTPUT_DIR = project_root / "output" / "process"
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 def print_stage_title(title: str, stage_number: int = None):

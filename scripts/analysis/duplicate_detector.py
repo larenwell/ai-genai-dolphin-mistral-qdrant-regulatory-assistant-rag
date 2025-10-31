@@ -25,7 +25,7 @@ sys.path.append(str(project_root))
 
 
 class DuplicateDetector:
-    def __init__(self, analysis_report_path: str = "src/output/analysis/normativa_analysis_report.xlsx"):
+    def __init__(self, analysis_report_path: str = "output/analysis/normativa_analysis_report.xlsx"):
         self.analysis_report_path = Path(analysis_report_path)
         self.data_folder = Path("data/normativa")
         self.uniques_folder = Path("data/uniques")
@@ -166,7 +166,7 @@ class DuplicateDetector:
         print("\n📋 Generating duplicate analysis report...")
         
         # Create output directory
-        output_dir = Path("src/output/analysis")
+        output_dir = Path("output/analysis")
         output_dir.mkdir(parents=True, exist_ok=True)
         
         output_file = output_dir / "duplicate_analysis_report.xlsx"

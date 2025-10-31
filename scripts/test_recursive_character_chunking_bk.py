@@ -29,7 +29,7 @@ CHUNK_OVERLAP = 200  # Overlap entre chunks para mantener contexto
 SEPARATORS = ["\n\n", "\n", ". ", "! ", "? ", "; ", ", ", " ", ""]  # Prioridad de separadores
 
 EMBEDDING_BATCH_SIZE = 10
-COLLECTION_NAME = "rag_recursive_character_construction"
+COLLECTION_NAME = "asistente_normativa_sincro_kb_english_rcc"
 
 def check_ollama_connection() -> bool:
     """Verifica que Ollama esté disponible y respondiendo"""
@@ -367,7 +367,7 @@ def main():
     markdown_files = [f for f in os.listdir(markdown_dir) if f.endswith('_markdown.md')]
     
     if not markdown_files:
-        print("❌ No se encontraron archivos markdown en src/output/markdown")
+        print("❌ No se encontraron archivos markdown en output/markdown")
         print("   Ejecuta primero: python scripts/generate_markdown.py")
         return
     
@@ -477,8 +477,8 @@ def main():
     if total_processed > 0:    
         print(f"\n🎉 Recursive Character Chunking completado!")
         print(f"📁 Revisa los resultados en:")
-        print(f"   - src/output/chunking/recursive_character/")
-        print(f"   - src/output/embeddings_preview/recursive_character/")
+        print(f"   - output/chunking/recursive_character/")
+        print(f"   - output/embeddings_preview/recursive_character/")
         print(f"   - Base de conocimiento Qdrant: {COLLECTION_NAME}")
         print(f"\n📊 Configuración utilizada:")
         print(f"   - Modelo: {OLLAMA_MODEL}")

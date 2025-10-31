@@ -79,26 +79,26 @@ class EmbeddingControllerQdrant:
             print(f"❌ Error recreando colección: {e}")
             return False
     
-    def check_document_exists(self, document_name: str) -> bool:
+    def check_document_exists(self, document_id: str) -> bool:
         """
         Verifica si un documento ya existe en la colección
-        Busca por el campo 'document_name' en los metadatos
+        Busca por el campo 'document_id' en los metadatos
         
         Args:
-            document_name: Nombre del documento a buscar
+            document_id: ID del documento a buscar
             
         Returns:
             True si el documento existe, False en caso contrario
         """
         try:
-            # Scroll para obtener todos los puntos con ese document_name
+            # Scroll para obtener todos los puntos con ese document_id
             scroll_result = self.qdrant_client.scroll(
                 collection_name=self.qdrant_collection,
                 scroll_filter=models.Filter(
                     must=[
                         models.FieldCondition(
-                            key="document_name",
-                            match=models.MatchValue(value=document_name)
+                            key="document_id",
+                            match=models.MatchValue(value=document_id)
                         )
                     ]
                 ),
@@ -109,7 +109,7 @@ class EmbeddingControllerQdrant:
             exists = len(points) > 0
             
             if exists:
-                print(f"   ⚠️ Documento '{document_name}' ya existe en la colección")
+                print(f"   ⚠️ Documento '{document_id}' ya existe en la colección")
             
             return exists
             
@@ -117,12 +117,12 @@ class EmbeddingControllerQdrant:
             print(f"   ⚠️ Error verificando duplicados: {e}")
             return False  # En caso de error, asumir que no existe y continuar
     
-    def delete_document(self, document_name: str) -> bool:
+    def delete_document(self, document_id: str) -> bool:
         """
         Elimina todos los chunks de un documento específico
         
         Args:
-            document_name: Nombre del documento a eliminar
+            document_id: ID del documento a eliminar
             
         Returns:
             True si se eliminó correctamente, False en caso contrario
@@ -134,8 +134,8 @@ class EmbeddingControllerQdrant:
                 scroll_filter=models.Filter(
                     must=[
                         models.FieldCondition(
-                            key="document_name",
-                            match=models.MatchValue(value=document_name)
+                            key="document_id",
+                            match=models.MatchValue(value=document_id)
                         )
                     ]
                 ),
@@ -145,7 +145,7 @@ class EmbeddingControllerQdrant:
             points = scroll_result[0]
             
             if len(points) == 0:
-                print(f"   ℹ️ No se encontraron puntos para '{document_name}'")
+                print(f"   ℹ️ No se encontraron puntos para '{document_id}'")
                 return True
             
             # Eliminar por filtro
@@ -155,15 +155,15 @@ class EmbeddingControllerQdrant:
                     filter=models.Filter(
                         must=[
                             models.FieldCondition(
-                                key="document_name",
-                                match=models.MatchValue(value=document_name)
+                                key="document_id",
+                                match=models.MatchValue(value=document_id)
                             )
                         ]
                     )
                 )
             )
             
-            print(f"   🗑️ Eliminados {len(points)} chunks del documento '{document_name}'")
+            print(f"   🗑️ Eliminados {len(points)} chunks del documento '{document_id}'")
             return True
             
         except Exception as e:

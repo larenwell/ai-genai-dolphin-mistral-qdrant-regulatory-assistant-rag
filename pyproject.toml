@@ -37,6 +37,7 @@ dependencies = [
   "requests",
   "python-docx>=1.2.0",
   "langdetect>=1.0.9",
+  "docx2txt>=0.9",
 ]
 
 [tool.uv]

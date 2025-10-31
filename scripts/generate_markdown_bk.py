@@ -1,8 +1,7 @@
 #!/usr/bin/env python3
 """
-Script para generar archivos Markdown una sola vez por cada PDF en data/ingested_p2/
-Este script procesa todos los PDFs y genera los archivos .md que serán usados
-por los diferentes métodos de chunking.
+Script actualizado para procesar PDFs y DOCX
+Genera archivos Markdown para documentos técnicos en inglés
 """
 
 import os
@@ -10,11 +9,21 @@ import sys
 import json
 from pathlib import Path
 from dotenv import load_dotenv
+import docx2txt  # pip install docx2txt
 
 # Add src to path
 sys.path.append(str(Path(__file__).parent.parent / "src"))
 
 from ingestion.ingest_mistral import MistralExtractionController
+
+def extract_docx_content(docx_path: str) -> str:
+    """Extrae texto de archivo DOCX"""
+    try:
+        text = docx2txt.process(docx_path)
+        return text
+    except Exception as e:
+        print(f"❌ Error extrayendo DOCX: {e}")
+        return None
 
 def main():
     """Procesa todos los PDFs en data/ingested_p2/ y genera archivos Markdown"""
@@ -32,14 +41,14 @@ def main():
     
     # Define paths
     data_dir = Path("data/ingested_p2")
-    output_dir = Path("src/output/markdown")
+    output_dir = Path("output/markdown")
     
     # Ensure output directory exists
     output_dir.mkdir(parents=True, exist_ok=True)
     
     # Get all PDF files
     pdf_files = list(data_dir.glob("*.pdf"))
-    
+    #files = list(data_dir.glob("*.pdf")) + list(data_dir.glob("*.docx"))    
     if not pdf_files:
         print("❌ No se encontraron archivos PDF en data/ingested_p2/")
         return

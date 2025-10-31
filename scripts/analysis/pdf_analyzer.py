@@ -262,7 +262,7 @@ class PDFAnalyzer:
         df = df[column_order]
         
         # Create organized output directory structure
-        output_dir = Path("src/output/analysis")
+        output_dir = Path("output/analysis")
         output_dir.mkdir(parents=True, exist_ok=True)
         
         output_path = output_dir / output_file
@@ -370,7 +370,7 @@ class PDFAnalyzer:
             return
         
         # Create organized output directory structure
-        output_dir = Path("src/output/analysis")
+        output_dir = Path("output/analysis")
         output_dir.mkdir(parents=True, exist_ok=True)
         
         output_path = output_dir / output_file

@@ -11,7 +11,7 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 # Add src to path
-sys.path.append(str(Path(__file__).parent.parent / "src"))
+sys.path.append(str(Path(__file__).parent.parent))
 
 from ingestion.ingest_mistral import MistralExtractionController
 from embeddings.embedding_qdrant import EmbeddingControllerQdrant
@@ -48,11 +48,11 @@ def save_chunks_and_embeddings(chunks, document_name, document_summary):
     """Guarda chunks y genera embeddings"""
     
     # Crear directorios
-    os.makedirs("src/output/chunking/contextual", exist_ok=True)
-    os.makedirs("src/output/embeddings_preview/contextual", exist_ok=True)
+    os.makedirs("output/chunking/contextual", exist_ok=True)
+    os.makedirs("output/embeddings_preview/contextual", exist_ok=True)
     
     # Guardar chunks
-    chunks_file = f"src/output/chunking/contextual/{document_name}_contextual_chunks.json"
+    chunks_file = f"output/chunking/contextual/{document_name}_contextual_chunks.json"
     with open(chunks_file, 'w', encoding='utf-8') as f:
         json.dump(chunks, f, indent=2, ensure_ascii=False)
     
@@ -92,7 +92,7 @@ def save_chunks_and_embeddings(chunks, document_name, document_summary):
         "chunk_sizes": [len(chunk["content"]) for chunk in chunks[:10]]  # Tamaños de primeros 10 chunks
     }
     
-    preview_file = f"src/output/embeddings_preview/contextual/{document_name}_contextual_embeddings_preview.json"
+    preview_file = f"output/embeddings_preview/contextual/{document_name}_contextual_embeddings_preview.json"
     with open(preview_file, 'w', encoding='utf-8') as f:
         json.dump(embeddings_preview, f, indent=2, ensure_ascii=False)
     
@@ -111,11 +111,11 @@ def main():
         return
     
     # Directorio de markdown
-    markdown_dir = "src/output/markdown"
+    markdown_dir = "output/markdown"
     markdown_files = [f for f in os.listdir(markdown_dir) if f.endswith('_markdown.md')]
     
     if not markdown_files:
-        print("❌ No se encontraron archivos markdown en src/output/markdown")
+        print("❌ No se encontraron archivos markdown en output/markdown")
         print("   Ejecuta primero: python scripts/generate_markdown.py")
         return
     
