@@ -5,7 +5,7 @@ sys.path.append(os.path.join(os.path.dirname(__file__), "../"))
 
 import chainlit as cl
 from llm.mistral_llm import MistralLLM
-from translation.translate import translate_text, get_translation_service
+from translation.translate_retrieval import translate_text, get_translation_service
 from embeddings.embedding_qdrant import EmbeddingControllerQdrant
 from dotenv import load_dotenv
 

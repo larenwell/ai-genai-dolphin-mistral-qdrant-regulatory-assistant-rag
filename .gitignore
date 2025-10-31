@@ -2,24 +2,31 @@
 .venv/
 venv/
 .env
+.env.local
+.env.*.local
 
 # Chainlit and application files
 .chainlit/
 .files/
+chainlit.log
+*.chainlit.log
 
 # Data directories (contain large files and processed content)
 /data/
 data/
 data/*.pdf
 data/**/*.pdf
+data/**/*.docx
+data/**/*.DOCX
 
 # Output and generated files (all processing results)
-src/output/
-src/output/*
-src/output_bk*/
-src/output_bk*/*
 output/
 output/*
+
+# Scripts directory (utility scripts - generated or temporary)
+scripts/
+scripts/*
+!scripts/.gitkeep
 
 # Evaluation results and test outputs
 src/evaluation/evaluation_results/
@@ -43,6 +50,8 @@ test_evaluation_results/
 *.swp
 *.swo
 *~
+*.sublime-project
+*.sublime-workspace
 
 # OS generated files
 .DS_Store
@@ -59,17 +68,36 @@ Thumbs.db
 *.temp
 logs/
 temp/
+*.cache
 
-# Dependencies and lock files
-# Note: uv.lock is tracked for reproducible builds
-# requirements.txt
-# pyproject.toml
+# Backup files
+*_bk.py
+*_bk.*
+*.bak
+*.backup
+*.old
+*.orig
+
+# Database files
+*.db
+*.sqlite
+*.sqlite3
+qdrant_storage/
+*.sql
+
+# Jupyter Notebook checkpoints
+.ipynb_checkpoints/
+
+# Coverage reports
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.pytest_cache/
+.hypothesis/
 
 # Test artifacts
 testing_stuff_out.py
-.coverage
-.pytest_cache/
-htmlcov/
 
 # Large files and media
 *.pdf
@@ -77,3 +105,24 @@ htmlcov/
 *.tar.gz
 *.rar
 *.7z
+*.dmg
+*.iso
+
+# Model files and embeddings (can be large)
+*.bin
+*.pkl
+*.pickle
+*.h5
+*.hdf5
+*.pt
+*.pth
+*.onnx
+
+# Dependencies and lock files
+# Note: uv.lock is tracked for reproducible builds
+# requirements.txt
+# pyproject.toml
+
+# Local configuration overrides
+config.local.*
+*.local.*

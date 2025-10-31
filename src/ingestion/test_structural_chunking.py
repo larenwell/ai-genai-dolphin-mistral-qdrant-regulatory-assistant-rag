@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Script optimizado para evaluar Semantic Chunking
-Versión mejorada con validaciones, batch processing y mejor manejo de errores
+Script optimizado para Structural Chunking
+Usa MarkdownHeaderTextSplitter para preservar estructura jerárquica de documentos
 """
 
 import os
@@ -15,40 +15,36 @@ from typing import List, Dict, Tuple, Optional
 # Add src to path
 sys.path.append(str(Path(__file__).parent.parent))
 
-from langchain_experimental.text_splitter import SemanticChunker
-from langchain_ollama import OllamaEmbeddings
+from langchain.text_splitter import MarkdownHeaderTextSplitter
 from embeddings.embedding_qdrant import EmbeddingControllerQdrant
+import ollama
 
 # Configuración
 OLLAMA_BASE_URL = "http://localhost:11434"
 OLLAMA_MODEL = "nomic-embed-text"
 
-# Configuración de Semantic Chunking
-SEMANTIC_METHOD = "gradient"  # Opciones: "percentile" | "standard_deviation" | "gradient" | "interquartile"
-SEMANTIC_THRESHOLD = None  # Para percentile: 70-95 | Para std_dev: 2.0-3.5 | Para IQR: 1.0-2.0 | None para gradient
+# Configuración de Structural Chunking
+HEADERS_TO_SPLIT = [
+    ("#", "Header 1"),
+    ("##", "Header 2"), 
+    ("###", "Header 3"),
+    ("####", "Header 4"),
+]
+STRIP_HEADERS = False  # Mantener headers en el contenido para contexto
 
-EMBEDDING_BATCH_SIZE = 10  # Procesar embeddings en lotes de 10
-COLLECTION_NAME = "rag_semantic_construction_gradient"
+EMBEDDING_BATCH_SIZE = 10
+COLLECTION_NAME = "rag_structural_construction"
 
 def check_ollama_connection() -> bool:
     """Verifica que Ollama esté disponible y respondiendo"""
     print("🔍 Verificando conexión con Ollama...")
     try:
-        embeddings = OllamaEmbeddings(
-            model=OLLAMA_MODEL,
-            base_url=OLLAMA_BASE_URL
-        )
-        # Test embedding pequeño
-        test_result = embeddings.embed_query("test connection")
-        
-        if test_result and len(test_result) > 0:
+        response = ollama.embed(model=OLLAMA_MODEL, input="test")
+        if response and "embeddings" in response:
             print(f"   ✅ Ollama conectado correctamente")
-            print(f"   📊 Dimensión de embeddings: {len(test_result)}")
+            print(f"   📊 Dimensión de embeddings: {len(response['embeddings'][0])}")
             return True
-        else:
-            print(f"   ❌ Ollama respondió pero el embedding está vacío")
-            return False
-            
+        return False
     except Exception as e:
         print(f"   ❌ No se puede conectar a Ollama: {str(e)}")
         print(f"   💡 Asegúrate de que Ollama esté corriendo:")
@@ -61,7 +57,7 @@ def analyze_chunk_statistics(chunks: List[str]) -> Dict:
     chunk_sizes = [len(chunk) for chunk in chunks]
     chunk_words = [len(chunk.split()) for chunk in chunks]
     
-    stats = {
+    return {
         "total_chunks": len(chunks),
         "char_stats": {
             "mean": statistics.mean(chunk_sizes),
@@ -77,30 +73,52 @@ def analyze_chunk_statistics(chunks: List[str]) -> Dict:
             "max": max(chunk_words)
         }
     }
-    
-    return stats
 
 def print_chunk_statistics(stats: Dict):
-    """Imprime estadísticas de chunks de forma legible"""
+    """Imprime estadísticas de forma legible"""
     print(f"   📊 Estadísticas de chunks:")
-    print(f"      Total de chunks: {stats['total_chunks']}")
+    print(f"      Total: {stats['total_chunks']} chunks")
     print(f"      ")
-    print(f"      📏 Tamaño en caracteres:")
+    print(f"      📏 Caracteres:")
     print(f"         - Promedio: {stats['char_stats']['mean']:.0f}")
     print(f"         - Mediana:  {stats['char_stats']['median']:.0f}")
-    print(f"         - Mínimo:   {stats['char_stats']['min']}")
-    print(f"         - Máximo:   {stats['char_stats']['max']}")
-    print(f"         - Desv.Est: {stats['char_stats']['stdev']:.0f}")
+    print(f"         - Rango: {stats['char_stats']['min']} - {stats['char_stats']['max']}")
     print(f"      ")
-    print(f"      📝 Tamaño en palabras:")
+    print(f"      📝 Palabras:")
     print(f"         - Promedio: {stats['word_stats']['mean']:.0f}")
-    print(f"         - Mediana:  {stats['word_stats']['median']:.0f}")
-    print(f"         - Mínimo:   {stats['word_stats']['min']}")
-    print(f"         - Máximo:   {stats['word_stats']['max']}")
+    print(f"         - Rango: {stats['word_stats']['min']} - {stats['word_stats']['max']}")
 
-def process_semantic_chunking(markdown_file: Path, document_name: str) -> Optional[Tuple[List[Dict], Dict]]:
+def analyze_header_distribution(chunks: List[Dict]) -> Dict:
+    """Analiza la distribución de headers en los chunks"""
+    header_distribution = {}
+    header_levels = {}
+    
+    for chunk in chunks:
+        for key, value in chunk["metadata"].items():
+            if key.startswith("Header"):
+                # Contar por nivel de header
+                if key not in header_distribution:
+                    header_distribution[key] = 0
+                header_distribution[key] += 1
+                
+                # Almacenar valores únicos por nivel
+                if key not in header_levels:
+                    header_levels[key] = set()
+                header_levels[key].add(value)
+    
+    return {
+        "header_counts": header_distribution,
+        "unique_headers": {k: len(v) for k, v in header_levels.items()}
+    }
+
+def process_structural_chunking(markdown_file: Path, document_name: str) -> Optional[Tuple[List[Dict], Dict]]:
     """
-    Procesa chunking usando SemanticChunker
+    Procesa chunking usando MarkdownHeaderTextSplitter
+    
+    Estrategia:
+    - Divide por estructura markdown (headers #, ##, ###, ####)
+    - Preserva jerarquía de artículos, capítulos, secciones
+    - Mantiene metadatos de estructura legal
     
     Returns:
         Tuple con (chunks_con_metadata, estadísticas) o None si falla
@@ -120,97 +138,77 @@ def process_semantic_chunking(markdown_file: Path, document_name: str) -> Option
     
     print(f"   📊 Tamaño del contenido: {len(markdown_content):,} caracteres")
     
-    print(f"   🔧 Configurando embeddings para semantic chunking...")
+    print(f"   ⚙️ Configurando markdown splitter...")
+    print(f"      - Headers a dividir: {len(HEADERS_TO_SPLIT)} niveles")
+    print(f"      - Strip headers: {STRIP_HEADERS}")
+    
     try:
-        embeddings = OllamaEmbeddings(
-            model=OLLAMA_MODEL,
-            base_url=OLLAMA_BASE_URL
+        markdown_splitter = MarkdownHeaderTextSplitter(
+            headers_to_split_on=HEADERS_TO_SPLIT,
+            strip_headers=STRIP_HEADERS
         )
     except Exception as e:
-        print(f"   ❌ Error configurando embeddings: {str(e)}")
+        print(f"   ❌ Error configurando splitter: {str(e)}")
         return None
     
-    print(f"   ⚙️ Configurando semantic chunker (método={SEMANTIC_METHOD}, threshold={SEMANTIC_THRESHOLD})...")
-    try:
-        # Configurar según el método seleccionado
-        if SEMANTIC_METHOD == "gradient":
-            semantic_chunker = SemanticChunker(
-                embeddings=embeddings,
-                breakpoint_threshold_type="gradient",
-                add_start_index=True
-            )
-        elif SEMANTIC_METHOD == "standard_deviation":
-            semantic_chunker = SemanticChunker(
-                embeddings=embeddings,
-                breakpoint_threshold_type="standard_deviation",
-                breakpoint_threshold_amount=SEMANTIC_THRESHOLD if SEMANTIC_THRESHOLD else 3.0,
-                add_start_index=True
-            )
-        elif SEMANTIC_METHOD == "interquartile":
-            semantic_chunker = SemanticChunker(
-                embeddings=embeddings,
-                breakpoint_threshold_type="interquartile",
-                breakpoint_threshold_amount=SEMANTIC_THRESHOLD if SEMANTIC_THRESHOLD else 1.5,
-                add_start_index=True
-            )
-        else:  # percentile (default)
-            semantic_chunker = SemanticChunker(
-                embeddings=embeddings,
-                breakpoint_threshold_type="percentile",
-                breakpoint_threshold_amount=SEMANTIC_THRESHOLD if SEMANTIC_THRESHOLD else 95,
-                add_start_index=True
-            )
-    except Exception as e:
-        print(f"   ❌ Error configurando chunker: {str(e)}")
-        return None
-    
-    print(f"   🔄 Dividiendo contenido en chunks semánticos...")
-    print(f"      ⏳ Esto puede tomar varios minutos...")
+    print(f"   🔄 Dividiendo contenido por estructura markdown...")
     
     try:
-        chunks = semantic_chunker.split_text(markdown_content)
+        structural_chunks = markdown_splitter.split_text(markdown_content)
     except Exception as e:
         print(f"   ❌ Error durante chunking: {str(e)}")
         return None
     
-    if not chunks:
+    if not structural_chunks:
         print(f"   ⚠️ No se generaron chunks")
         return None
     
-    print(f"   ✅ Chunking completado: {len(chunks)} chunks generados")
+    print(f"   ✅ Chunking completado: {len(structural_chunks)} chunks generados")
     
-    # Analizar estadísticas
-    stats = analyze_chunk_statistics(chunks)
-    print_chunk_statistics(stats)
-    
+    # Convertir a formato estándar con metadatos
     print(f"   🏷️ Preparando metadatos de chunks...")
-    # Crear estructura de chunks con metadatos
     chunked_documents = []
-    for i, chunk in enumerate(chunks):
+    
+    for i, chunk in enumerate(structural_chunks):
+        # Extraer metadatos de headers
+        header_metadata = {}
+        for key, value in chunk.metadata.items():
+            if isinstance(value, str):
+                header_metadata[key] = value
+        
         chunked_documents.append({
-            "content": chunk,
+            "content": chunk.page_content,
             "metadata": {
                 "chunk_index": i,
                 "document_name": document_name,
-                "chunking_method": f"semantic_{SEMANTIC_METHOD}",
-                "chunk_size": len(chunk),
-                "chunk_words": len(chunk.split()),
-                "threshold_type": SEMANTIC_METHOD,
-                "threshold_value": SEMANTIC_THRESHOLD
+                "chunking_method": "structural",
+                "chunk_size": len(chunk.page_content),
+                "chunk_words": len(chunk.page_content.split()),
+                **header_metadata
             }
         })
+    
+    # Analizar estadísticas
+    chunk_contents = [c["content"] for c in chunked_documents]
+    stats = analyze_chunk_statistics(chunk_contents)
+    print_chunk_statistics(stats)
+    
+    # Analizar distribución de headers
+    header_dist = analyze_header_distribution(chunked_documents)
+    print(f"   📑 Distribución de headers:")
+    for header_level, count in sorted(header_dist["header_counts"].items()):
+        unique_count = header_dist["unique_headers"].get(header_level, 0)
+        print(f"      - {header_level}: {count} chunks ({unique_count} únicos)")
+    
+    # Agregar info de headers a stats
+    stats["header_distribution"] = header_dist
     
     print(f"   ✅ Metadatos preparados: {len(chunked_documents)} documentos")
     return chunked_documents, stats
 
 def generate_embeddings_batch(embedding_controller: EmbeddingControllerQdrant, 
                               documents: List[str]) -> List:
-    """
-    Genera embeddings en lotes para mejor performance
-    
-    Returns:
-        Lista de embeddings generados
-    """
+    """Genera embeddings en lotes para mejor performance"""
     embeddings = []
     total_batches = (len(documents) + EMBEDDING_BATCH_SIZE - 1) // EMBEDDING_BATCH_SIZE
     
@@ -227,7 +225,6 @@ def generate_embeddings_batch(embedding_controller: EmbeddingControllerQdrant,
             try:
                 embedding = embedding_controller.generate_embeddings(doc)
                 
-                # Validar embedding
                 if embedding is None or len(embedding) == 0:
                     print(f"         ⚠️ Warning: Embedding vacío para documento {batch_idx + i}")
                     continue
@@ -249,39 +246,30 @@ def save_chunks_and_embeddings(chunks: List[Dict],
                                stats: Dict,
                                recreate_collection: bool = False,
                                check_duplicates: bool = False) -> bool:
-    """
-    Guarda chunks y genera embeddings con validaciones
+    """Guarda chunks y genera embeddings con validaciones"""
     
-    Args:
-        chunks: Lista de chunks con metadatos
-        document_name: Nombre del documento
-        stats: Estadísticas de los chunks
-        recreate_collection: Si True, recrea la colección en Qdrant
-    """
-    
-    # Obtener directorio raíz del proyecto
     project_root = Path(__file__).parent.parent
-
-    kb_name = COLLECTION_NAME.replace("rag_semantic_construction_", "")
-
-    print(f"   📁 Directorio de Knowledge Base: {kb_name}")
+    
     print(f"   📁 Creando directorios de salida...")
-    # Crear directorios
-    chunking_dir = project_root / "src" / "output" / "chunking" / "semantic" / kb_name
-    preview_dir = project_root / "src" / "output" / "embeddings_preview" / "semantic" / kb_name
+    
+    chunking_dir = project_root / "output" / "chunking" / "structural"
+    preview_dir = project_root / "output" / "embeddings_preview" / "structural"
     
     chunking_dir.mkdir(parents=True, exist_ok=True)
     preview_dir.mkdir(parents=True, exist_ok=True)
     
     print(f"   💾 Guardando chunks en archivo JSON...")
-    # Guardar chunks con estadísticas
     chunks_data = {
         "document_name": document_name,
         "statistics": stats,
+        "configuration": {
+            "headers_to_split": HEADERS_TO_SPLIT,
+            "strip_headers": STRIP_HEADERS
+        },
         "chunks": chunks
     }
     
-    chunks_file = chunking_dir / f"{document_name}_semantic_chunks.json"
+    chunks_file = chunking_dir / f"{document_name}_structural_chunks.json"
     try:
         with open(chunks_file, 'w', encoding='utf-8') as f:
             json.dump(chunks_data, f, indent=2, ensure_ascii=False)
@@ -294,7 +282,6 @@ def save_chunks_and_embeddings(chunks: List[Dict],
     try:
         embedding_controller = EmbeddingControllerQdrant(qdrant_collection=COLLECTION_NAME)
         
-        # Recrear colección si se solicita
         if recreate_collection:
             print(f"   🗑️ Recreando colección {COLLECTION_NAME}...")
             success = embedding_controller.recreate_collection()
@@ -302,7 +289,6 @@ def save_chunks_and_embeddings(chunks: List[Dict],
                 print(f"   ❌ Error recreando colección")
                 return False
         
-        # Verificar duplicados si se solicita
         if check_duplicates:
             print(f"   🔍 Verificando si '{document_name}' ya existe en la colección...")
             exists = embedding_controller.check_document_exists(document_name)
@@ -326,7 +312,6 @@ def save_chunks_and_embeddings(chunks: List[Dict],
     documents_for_embedding = [chunk["content"] for chunk in chunks]
     metadata_list = [chunk["metadata"] for chunk in chunks]
     
-    # Generar embeddings en lotes
     embeddings = generate_embeddings_batch(embedding_controller, documents_for_embedding)
     
     if len(embeddings) == 0:
@@ -335,7 +320,6 @@ def save_chunks_and_embeddings(chunks: List[Dict],
     
     if len(embeddings) < len(documents_for_embedding):
         print(f"   ⚠️ Solo se generaron {len(embeddings)}/{len(documents_for_embedding)} embeddings")
-        # Ajustar metadatos y documentos a los embeddings exitosos
         metadata_list = metadata_list[:len(embeddings)]
         documents_for_embedding = documents_for_embedding[:len(embeddings)]
     
@@ -359,12 +343,12 @@ def save_chunks_and_embeddings(chunks: List[Dict],
         return False
     
     print(f"   📊 Generando preview de embeddings...")
-    # Guardar preview de embeddings
     embeddings_preview = {
         "document_name": document_name,
-        "chunking_method": "semantic",
+        "chunking_method": "structural",
         "configuration": {
-            "percentile_threshold": SEMANTIC_THRESHOLD,
+            "headers_to_split": HEADERS_TO_SPLIT,
+            "strip_headers": STRIP_HEADERS,
             "model": OLLAMA_MODEL,
             "embedding_dimension": len(embeddings[0]) if embeddings else 0
         },
@@ -377,13 +361,14 @@ def save_chunks_and_embeddings(chunks: List[Dict],
             {
                 "index": i,
                 "size": len(chunks[i]["content"]),
+                "headers": {k: v for k, v in chunks[i]["metadata"].items() if k.startswith("Header")},
                 "preview": chunks[i]["content"][:200] + "..." if len(chunks[i]["content"]) > 200 else chunks[i]["content"]
             }
             for i in range(min(5, len(chunks)))
         ]
     }
     
-    preview_file = preview_dir / f"{document_name}_semantic_embeddings_preview.json"
+    preview_file = preview_dir / f"{document_name}_structural_embeddings_preview.json"
     try:
         with open(preview_file, 'w', encoding='utf-8') as f:
             json.dump(embeddings_preview, f, indent=2, ensure_ascii=False)
@@ -395,23 +380,25 @@ def save_chunks_and_embeddings(chunks: List[Dict],
 
 def main():
     """Función principal"""
-    print("🚀 INICIANDO SEMANTIC CHUNKING (VERSIÓN OPTIMIZADA)")
+    print("🚀 INICIANDO STRUCTURAL CHUNKING (VERSIÓN OPTIMIZADA)")
     print("=" * 60)
+    print(f"📋 Estrategia: División por estructura markdown (headers)")
+    print(f"   - Preserva jerarquía de documentos legales")
+    print(f"   - Mantiene artículos, capítulos y secciones completas")
+    print(f"   - Headers: {[h[0] for h in HEADERS_TO_SPLIT]}")
+    print()
     
     load_dotenv()
     
-    # Verificar conexión con Ollama ANTES de procesar
     if not check_ollama_connection():
         print("\n❌ No se puede continuar sin conexión a Ollama")
         return
     
     print()
     
-    # Obtener directorio raíz del proyecto
     project_root = Path(__file__).parent.parent
-    markdown_dir = project_root / "src" / "output" / "markdown"
+    markdown_dir = project_root / "output" / "markdown"
     
-    # Verificar que el directorio existe
     if not markdown_dir.exists():
         print(f"❌ No se encontró el directorio: {markdown_dir}")
         print("   Ejecuta primero: python scripts/generate_markdown.py")
@@ -429,15 +416,14 @@ def main():
         print(f"   📄 {file}")
     print()
     
-    # Configuración de la colección
     print("🗄️ CONFIGURACIÓN DE COLECCIÓN QDRANT")
     print("-" * 60)
     print(f"Colección: {COLLECTION_NAME}")
     print()
     print("Opciones:")
-    print("  1. Agregar el documento a la colección existente (mantiene datos previos)")
-    print("  2. Recrear la colección (BORRA todo y empieza desde cero)")
-    print("  3. Verificar si el documento ya existe en la colección (recomendado)")
+    print("  1. Agregar a colección existente (mantiene datos previos)")
+    print("  2. Recrear colección (BORRA todo y empieza desde cero)")
+    print("  3. Verificar duplicados antes de agregar (recomendado)")
     print()
     
     option = input("Selecciona una opción (1/2/3) [default=1]: ").strip()
@@ -461,7 +447,6 @@ def main():
     total_embeddings = 0
     
     for i, markdown_file in enumerate(markdown_files, 1):
-        # Extraer nombre del documento
         document_name = markdown_file.replace('_markdown.md', '')
         markdown_path = markdown_dir / markdown_file
         
@@ -469,9 +454,8 @@ def main():
         print("-" * 60)
         
         try:
-            # Procesar chunking
-            print(f"📝 FASE 1: Chunking Semántico")
-            result = process_semantic_chunking(markdown_path, document_name)
+            print(f"📝 FASE 1: Structural Chunking")
+            result = process_structural_chunking(markdown_path, document_name)
             
             if result is None:
                 print(f"❌ Error en chunking de {document_name}")
@@ -483,9 +467,7 @@ def main():
             print(f"✅ Chunking completado: {len(chunks)} chunks generados")
             print()
             
-            # Guardar chunks y embeddings
             print(f"💾 FASE 2: Guardado y Embeddings")
-            # Solo recrear en el primer documento si está activado
             should_recreate = recreate and (i == 1)
             should_check = check_duplicates
             success = save_chunks_and_embeddings(chunks, document_name, stats, should_recreate, should_check)
@@ -533,16 +515,15 @@ def main():
             print(f"⚠️ No se pudieron obtener estadísticas: {e}")
     
     if total_processed > 0:
-        kb_name = COLLECTION_NAME.replace("rag_semantic_construction_", "")
-        print(f"\n🎉 Semantic Chunking completado!")
+        print(f"\n🎉 Structural Chunking completado!")
         print(f"📁 Revisa los resultados en:")
-        print(f"   - output/chunking/semantic/{kb_name}")
-        print(f"   - output/embeddings_preview/semantic/{kb_name}")
+        print(f"   - output/chunking/structural/")
+        print(f"   - output/embeddings_preview/structural/")
         print(f"   - Base de conocimiento Qdrant: {COLLECTION_NAME}")
         print(f"\n📊 Configuración utilizada:")
         print(f"   - Modelo: {OLLAMA_MODEL}")
-        print(f"   - Método: {SEMANTIC_METHOD}")
-        print(f"   - Threshold: {SEMANTIC_THRESHOLD}")
+        print(f"   - Headers: {[h[0] for h in HEADERS_TO_SPLIT]}")
+        print(f"   - Strip headers: {STRIP_HEADERS}")
         print(f"   - Batch size: {EMBEDDING_BATCH_SIZE}")
     
     if total_failed > 0:

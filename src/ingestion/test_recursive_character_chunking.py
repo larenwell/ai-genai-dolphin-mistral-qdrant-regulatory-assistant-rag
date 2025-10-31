@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """
 Script optimizado para Recursive Character Text Chunking
-Usa RecursiveCharacterTextSplitter con configuración optimizada
+Lee archivos markdown generados por generate_markdown.py y su metadata
+Genera embeddings e ingesta en Qdrant con metadata normalizada
 """
 
 import os
@@ -13,7 +14,7 @@ from dotenv import load_dotenv
 from typing import List, Dict, Tuple, Optional
 
 # Add src to path
-sys.path.append(str(Path(__file__).parent.parent / "src"))
+sys.path.append(str(Path(__file__).parent.parent))
 
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from embeddings.embedding_qdrant import EmbeddingControllerQdrant
@@ -24,9 +25,9 @@ OLLAMA_BASE_URL = "http://localhost:11434"
 OLLAMA_MODEL = "nomic-embed-text"
 
 # Configuración de Recursive Character Chunking
-CHUNK_SIZE = 1000  # Tamaño objetivo de cada chunk (caracteres)
-CHUNK_OVERLAP = 200  # Overlap entre chunks para mantener contexto
-SEPARATORS = ["\n\n", "\n", ". ", "! ", "? ", "; ", ", ", " ", ""]  # Prioridad de separadores
+CHUNK_SIZE = 1000
+CHUNK_OVERLAP = 200
+SEPARATORS = ["\n\n", "\n", ". ", "! ", "? ", "; ", ", ", " ", ""]
 
 EMBEDDING_BATCH_SIZE = 10
 COLLECTION_NAME = "asistente_normativa_sincro_kb_english_rcc"
@@ -47,6 +48,38 @@ def check_ollama_connection() -> bool:
         print(f"      - Ejecuta: ollama serve")
         print(f"      - Verifica que el modelo esté instalado: ollama pull {OLLAMA_MODEL}")
         return False
+
+def load_document_metadata(markdown_file: Path) -> Optional[Dict]:
+    """
+    Carga la metadata del documento desde el archivo JSON
+    
+    Args:
+        markdown_file: Path al archivo markdown
+        
+    Returns:
+        Dict con metadata del documento o None si no existe
+    """
+    # Buscar archivo de metadata correspondiente
+    metadata_file = markdown_file.parent / (markdown_file.stem.replace('_markdown', '') + '_metadata.json')
+    
+    if not metadata_file.exists():
+        print(f"   ⚠️  Archivo de metadata no encontrado: {metadata_file.name}")
+        return None
+    
+    try:
+        with open(metadata_file, 'r', encoding='utf-8') as f:
+            metadata = json.load(f)
+        
+        print(f"   ✅ Metadata cargada:")
+        print(f"      - Document ID: {metadata.get('document_id', 'N/A')}")
+        print(f"      - Title: {metadata.get('book_title', 'N/A')}")
+        print(f"      - Language: {metadata.get('language', 'N/A')}")
+        
+        return metadata
+        
+    except Exception as e:
+        print(f"   ❌ Error leyendo metadata: {str(e)}")
+        return None
 
 def analyze_chunk_statistics(chunks: List[str]) -> Dict:
     """Analiza estadísticas de los chunks generados"""
@@ -84,14 +117,10 @@ def print_chunk_statistics(stats: Dict):
     print(f"         - Promedio: {stats['word_stats']['mean']:.0f}")
     print(f"         - Rango: {stats['word_stats']['min']} - {stats['word_stats']['max']}")
 
-def process_recursive_character_chunking(markdown_file: Path, document_name: str) -> Optional[Tuple[List[Dict], Dict]]:
+def process_recursive_character_chunking(markdown_file: Path, doc_metadata: Dict) -> Optional[Tuple[List[Dict], Dict]]:
     """
     Procesa chunking usando RecursiveCharacterTextSplitter
-    
-    Estrategia:
-    - Divide por tamaño fijo con overlap
-    - Respeta separadores naturales (párrafos, oraciones, palabras)
-    - Predecible y rápido
+    Usa metadata normalizada del documento
     
     Returns:
         Tuple con (chunks_con_metadata, estadísticas) o None si falla
@@ -114,7 +143,6 @@ def process_recursive_character_chunking(markdown_file: Path, document_name: str
     print(f"   ⚙️ Configurando text splitter...")
     print(f"      - Chunk size: {CHUNK_SIZE}")
     print(f"      - Overlap: {CHUNK_OVERLAP}")
-    print(f"      - Separadores: {len(SEPARATORS)} niveles")
     
     try:
         text_splitter = RecursiveCharacterTextSplitter(
@@ -147,20 +175,32 @@ def process_recursive_character_chunking(markdown_file: Path, document_name: str
     print_chunk_statistics(stats)
     
     print(f"   🏷️ Preparando metadatos de chunks...")
-    # Crear estructura de chunks con metadatos
+    
+    # Crear estructura de chunks con metadata NORMALIZADA
     chunked_documents = []
     for i, chunk in enumerate(chunks):
+        # Metadata completa y normalizada
+        chunk_metadata = {
+            # Identificación del documento (normalizada)
+            "document_id": doc_metadata['document_id'],
+            "source_file": doc_metadata['source_file'],
+            "book_title": doc_metadata['book_title'],
+            "language": doc_metadata['language'],
+            
+            # Información del chunk
+            "chunk_index": i,
+            "chunking_method": "recursive_character",
+            "chunk_size": len(chunk),
+            "chunk_words": len(chunk.split()),
+            
+            # Configuración del chunking
+            "target_chunk_size": CHUNK_SIZE,
+            "chunk_overlap": CHUNK_OVERLAP
+        }
+        
         chunked_documents.append({
             "content": chunk,
-            "metadata": {
-                "chunk_index": i,
-                "document_name": document_name,
-                "chunking_method": "recursive_character",
-                "chunk_size": len(chunk),
-                "chunk_words": len(chunk.split()),
-                "target_chunk_size": CHUNK_SIZE,
-                "chunk_overlap": CHUNK_OVERLAP
-            }
+            "metadata": chunk_metadata
         })
     
     print(f"   ✅ Metadatos preparados: {len(chunked_documents)} documentos")
@@ -178,7 +218,7 @@ def generate_embeddings_batch(embedding_controller: EmbeddingControllerQdrant,
         batch = documents[batch_idx:batch_idx + EMBEDDING_BATCH_SIZE]
         batch_num = batch_idx // EMBEDDING_BATCH_SIZE + 1
         
-        print(f"      📦 Procesando lote {batch_num}/{total_batches} ({len(batch)} documentos)...")
+        print(f"      📦 Lote {batch_num}/{total_batches} ({len(batch)} documentos)...")
         
         batch_embeddings = []
         for i, doc in enumerate(batch):
@@ -186,7 +226,7 @@ def generate_embeddings_batch(embedding_controller: EmbeddingControllerQdrant,
                 embedding = embedding_controller.generate_embeddings(doc)
                 
                 if embedding is None or len(embedding) == 0:
-                    print(f"         ⚠️ Warning: Embedding vacío para documento {batch_idx + i}")
+                    print(f"         ⚠️ Embedding vacío para documento {batch_idx + i}")
                     continue
                 
                 batch_embeddings.append(embedding)
@@ -202,25 +242,27 @@ def generate_embeddings_batch(embedding_controller: EmbeddingControllerQdrant,
     return embeddings
 
 def save_chunks_and_embeddings(chunks: List[Dict], 
-                               document_name: str, 
+                               doc_metadata: Dict,
                                stats: Dict,
                                recreate_collection: bool = False,
                                check_duplicates: bool = False) -> bool:
-    """Guarda chunks y genera embeddings con validaciones"""
+    """Guarda chunks y genera embeddings con metadata normalizada"""
     
-    project_root = Path(__file__).parent.parent
+    project_root = Path(__file__).parent.parent.parent
 
     print(f"   📁 Creando directorios de salida...")
 
-    chunking_dir = project_root / "src" / "output" / "chunking" / "recursive_character"
-    preview_dir = project_root / "src" / "output" / "embeddings_preview" / "recursive_character"
+    chunking_dir = project_root / "output" / "chunking" / "recursive_character"
+    preview_dir = project_root / "output" / "embeddings_preview" / "recursive_character"
     
     chunking_dir.mkdir(parents=True, exist_ok=True)
     preview_dir.mkdir(parents=True, exist_ok=True)
     
     print(f"   💾 Guardando chunks en archivo JSON...")
     chunks_data = {
-        "document_name": document_name,
+        "document_id": doc_metadata['document_id'],
+        "book_title": doc_metadata['book_title'],
+        "language": doc_metadata['language'],
         "statistics": stats,
         "configuration": {
             "chunk_size": CHUNK_SIZE,
@@ -230,11 +272,12 @@ def save_chunks_and_embeddings(chunks: List[Dict],
         "chunks": chunks
     }
     
-    chunks_file = chunking_dir / f"{document_name}_recursive_character_chunks.json"
+    # Usar document_id para el nombre del archivo
+    chunks_file = chunking_dir / f"{doc_metadata['document_id']}_recursive_character_chunks.json"
     try:
         with open(chunks_file, 'w', encoding='utf-8') as f:
             json.dump(chunks_data, f, indent=2, ensure_ascii=False)
-        print(f"   ✅ Chunks guardados: {chunks_file}")
+        print(f"   ✅ Chunks guardados: {chunks_file.name}")
     except Exception as e:
         print(f"   ❌ Error guardando chunks: {str(e)}")
         return False
@@ -251,16 +294,16 @@ def save_chunks_and_embeddings(chunks: List[Dict],
                 return False
         
         if check_duplicates:
-            print(f"   🔍 Verificando si '{document_name}' ya existe en la colección...")
-            exists = embedding_controller.check_document_exists(document_name)
+            print(f"   🔍 Verificando si '{doc_metadata['document_id']}' ya existe...")
+            exists = embedding_controller.check_document_exists(doc_metadata['document_id'])
             if exists:
                 user_input = input(f"      ¿Eliminar y reemplazar el documento existente? (s/N): ").lower()
                 if user_input == 's':
                     print(f"      🗑️ Eliminando documento anterior...")
-                    embedding_controller.delete_document(document_name)
-                    print(f"      ✅ Documento anterior eliminado. Procediendo con el nuevo...")
+                    embedding_controller.delete_document(doc_metadata['document_id'])
+                    print(f"      ✅ Documento anterior eliminado")
                 else:
-                    print(f"      ⏭️ Saltando documento para evitar duplicados.")
+                    print(f"      ⏭️ Saltando documento")
                     return True
             else:
                 print(f"   ✅ Documento no existe. Procediendo...")
@@ -305,7 +348,9 @@ def save_chunks_and_embeddings(chunks: List[Dict],
     
     print(f"   📊 Generando preview de embeddings...")
     embeddings_preview = {
-        "document_name": document_name,
+        "document_id": doc_metadata['document_id'],
+        "book_title": doc_metadata['book_title'],
+        "language": doc_metadata['language'],
         "chunking_method": "recursive_character",
         "configuration": {
             "chunk_size": CHUNK_SIZE,
@@ -328,11 +373,11 @@ def save_chunks_and_embeddings(chunks: List[Dict],
         ]
     }
     
-    preview_file = preview_dir / f"{document_name}_recursive_character_embeddings_preview.json"
+    preview_file = preview_dir / f"{doc_metadata['document_id']}_recursive_character_embeddings_preview.json"
     try:
         with open(preview_file, 'w', encoding='utf-8') as f:
             json.dump(embeddings_preview, f, indent=2, ensure_ascii=False)
-        print(f"   ✅ Preview de embeddings guardado: {preview_file}")
+        print(f"   ✅ Preview guardado: {preview_file.name}")
     except Exception as e:
         print(f"   ⚠️ Error guardando preview: {str(e)}")
     
@@ -340,12 +385,11 @@ def save_chunks_and_embeddings(chunks: List[Dict],
 
 def main():
     """Función principal"""
-    print("🚀 INICIANDO RECURSIVE CHARACTER TEXT CHUNKING (VERSIÓN OPTIMIZADA)")
-    print("=" * 60)
-    print(f"📋 Estrategia: División por tamaño fijo con overlap")
+    print("🚀 RECURSIVE CHARACTER TEXT CHUNKING")
+    print("="*60)
+    print(f"📋 Lee archivos markdown y metadata generados por generate_markdown.py")
     print(f"   - Chunk size: {CHUNK_SIZE} caracteres")
     print(f"   - Overlap: {CHUNK_OVERLAP} caracteres")
-    print(f"   - Respeta separadores naturales (párrafos → oraciones → palabras)")
     print()
     
     load_dotenv()
@@ -356,8 +400,10 @@ def main():
     
     print()
     
-    project_root = Path(__file__).parent.parent
-    markdown_dir = project_root / "src" / "output" / "markdown"
+    project_root = Path(__file__).parent.parent.parent
+    
+    # ACTUALIZADO: Leer de markdown_english (no markdown)
+    markdown_dir = project_root / "output" / "markdown" / "EXTRA_DS_LEY_EN"
     
     if not markdown_dir.exists():
         print(f"❌ No se encontró el directorio: {markdown_dir}")
@@ -367,7 +413,7 @@ def main():
     markdown_files = [f for f in os.listdir(markdown_dir) if f.endswith('_markdown.md')]
     
     if not markdown_files:
-        print("❌ No se encontraron archivos markdown en output/markdown")
+        print(f"❌ No se encontraron archivos markdown en {markdown_dir}")
         print("   Ejecuta primero: python scripts/generate_markdown.py")
         return
     
@@ -377,12 +423,12 @@ def main():
     print()
     
     print("🗄️ CONFIGURACIÓN DE COLECCIÓN QDRANT")
-    print("-" * 60)
+    print("-"*60)
     print(f"Colección: {COLLECTION_NAME}")
     print()
     print("Opciones:")
-    print("  1. Agregar a colección existente (mantiene datos previos)")
-    print("  2. Recrear colección (BORRA todo y empieza desde cero)")
+    print("  1. Agregar a colección existente")
+    print("  2. Recrear colección (BORRA todo)")
     print("  3. Verificar duplicados antes de agregar (recomendado)")
     print()
     
@@ -391,11 +437,11 @@ def main():
     if option == '2':
         recreate = True
         check_duplicates = False
-        print("   ⚠️ Se recreará la colección (se perderán datos previos)")
+        print("   ⚠️ Se recreará la colección")
     elif option == '3':
         recreate = False
         check_duplicates = True
-        print("   ✅ Se verificarán duplicados antes de agregar")
+        print("   ✅ Se verificarán duplicados")
     else:
         recreate = False
         check_duplicates = False
@@ -407,18 +453,26 @@ def main():
     total_embeddings = 0
     
     for i, markdown_file in enumerate(markdown_files, 1):
-        document_name = markdown_file.replace('_markdown.md', '')
         markdown_path = markdown_dir / markdown_file
         
-        print(f"🔄 PROCESANDO DOCUMENTO {i}/{len(markdown_files)}: {document_name}")
-        print("-" * 60)
+        print(f"🔄 PROCESANDO DOCUMENTO {i}/{len(markdown_files)}: {markdown_file}")
+        print("-"*60)
         
         try:
+            # NUEVO: Cargar metadata del documento
+            print(f"📋 FASE 0: Carga de Metadata")
+            doc_metadata = load_document_metadata(markdown_path)
+            
+            if not doc_metadata:
+                print(f"❌ No se pudo cargar metadata de {markdown_file}")
+                total_failed += 1
+                continue
+            
             print(f"📝 FASE 1: Recursive Character Chunking")
-            result = process_recursive_character_chunking(markdown_path, document_name)
+            result = process_recursive_character_chunking(markdown_path, doc_metadata)
             
             if result is None:
-                print(f"❌ Error en chunking de {document_name}")
+                print(f"❌ Error en chunking de {markdown_file}")
                 total_failed += 1
                 continue
             
@@ -430,45 +484,44 @@ def main():
             print(f"💾 FASE 2: Guardado y Embeddings")
             should_recreate = recreate and (i == 1)
             should_check = check_duplicates
-            success = save_chunks_and_embeddings(chunks, document_name, stats, should_recreate, should_check)
+            success = save_chunks_and_embeddings(chunks, doc_metadata, stats, should_recreate, should_check)
             
             if success:
-                print(f"🎉 {document_name} procesado exitosamente")
+                print(f"🎉 {doc_metadata['document_id']} procesado exitosamente")
                 total_processed += 1
                 total_embeddings += len(chunks)
             else:
-                print(f"⚠️ {document_name} procesado con advertencias")
+                print(f"⚠️ {doc_metadata['document_id']} procesado con advertencias")
                 total_processed += 1
                 
         except Exception as e:
-            print(f"❌ Error inesperado procesando {document_name}: {str(e)}")
+            print(f"❌ Error inesperado procesando {markdown_file}: {str(e)}")
             import traceback
             traceback.print_exc()
             total_failed += 1
         
         print()
-        print("=" * 60)
+        print("="*60)
         print()
     
     # Resumen final
     print("📊 RESUMEN FINAL")
-    print("=" * 60)
+    print("="*60)
     print(f"✅ Documentos procesados exitosamente: {total_processed}")
     print(f"❌ Documentos con errores: {total_failed}")
     print(f"📁 Total de documentos: {len(markdown_files)}")
     print(f"📦 Total de chunks generados: {total_chunks}")
     print(f"🔢 Total de embeddings creados: {total_embeddings}")
     
-    # Mostrar estadísticas de la colección
     if total_processed > 0:
         try:
             print(f"\n📊 ESTADÍSTICAS DE LA COLECCIÓN QDRANT")
-            print("-" * 60)
+            print("-"*60)
             embedding_controller = EmbeddingControllerQdrant(qdrant_collection=COLLECTION_NAME)
             stats = embedding_controller.get_collection_stats()
             print(f"Total de chunks en colección: {stats['total_chunks']}")
             print(f"Documentos únicos: {stats['unique_documents']}")
-            print(f"Nombres de documentos:")
+            print(f"Documentos:")
             for doc_name in sorted(stats['document_names']):
                 print(f"   - {doc_name}")
         except Exception as e:
@@ -480,11 +533,6 @@ def main():
         print(f"   - output/chunking/recursive_character/")
         print(f"   - output/embeddings_preview/recursive_character/")
         print(f"   - Base de conocimiento Qdrant: {COLLECTION_NAME}")
-        print(f"\n📊 Configuración utilizada:")
-        print(f"   - Modelo: {OLLAMA_MODEL}")
-        print(f"   - Chunk size: {CHUNK_SIZE}")
-        print(f"   - Overlap: {CHUNK_OVERLAP}")
-        print(f"   - Batch size: {EMBEDDING_BATCH_SIZE}")
     
     if total_failed > 0:
         print(f"\n⚠️ Algunos documentos tuvieron problemas. Revisa los errores arriba.")

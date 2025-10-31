@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """
-Script optimizado para Structural Chunking
-Usa MarkdownHeaderTextSplitter para preservar estructura jerárquica de documentos
+Script optimizado para Hybrid Chunking
+Combina Structural (MarkdownHeaderTextSplitter) + Semantic (SemanticChunker)
+con mejores prácticas y validaciones
 """
 
 import os
@@ -16,35 +17,48 @@ from typing import List, Dict, Tuple, Optional
 sys.path.append(str(Path(__file__).parent.parent))
 
 from langchain.text_splitter import MarkdownHeaderTextSplitter
+from langchain_experimental.text_splitter import SemanticChunker
+from langchain_ollama import OllamaEmbeddings
 from embeddings.embedding_qdrant import EmbeddingControllerQdrant
-import ollama
 
 # Configuración
 OLLAMA_BASE_URL = "http://localhost:11434"
 OLLAMA_MODEL = "nomic-embed-text"
 
-# Configuración de Structural Chunking
-HEADERS_TO_SPLIT = [
+# Configuración de Hybrid Chunking
+STRUCTURAL_HEADERS = [
     ("#", "Header 1"),
     ("##", "Header 2"), 
     ("###", "Header 3"),
     ("####", "Header 4"),
 ]
-STRIP_HEADERS = False  # Mantener headers en el contenido para contexto
+
+# Semantic chunking solo se aplica a secciones grandes
+MIN_SECTION_SIZE_FOR_SEMANTIC = 3000  # Solo dividir secciones > 3000 caracteres
+SEMANTIC_METHOD = "percentile"  # percentile | standard_deviation | gradient | interquartile
+SEMANTIC_THRESHOLD = 80  # Para secciones grandes, usar 80-85 para balance
 
 EMBEDDING_BATCH_SIZE = 10
-COLLECTION_NAME = "rag_structural_construction"
+COLLECTION_NAME = "rag_hybrid_construction_p80_markdown"
 
 def check_ollama_connection() -> bool:
     """Verifica que Ollama esté disponible y respondiendo"""
     print("🔍 Verificando conexión con Ollama...")
     try:
-        response = ollama.embed(model=OLLAMA_MODEL, input="test")
-        if response and "embeddings" in response:
+        embeddings = OllamaEmbeddings(
+            model=OLLAMA_MODEL,
+            base_url=OLLAMA_BASE_URL
+        )
+        test_result = embeddings.embed_query("test connection")
+        
+        if test_result and len(test_result) > 0:
             print(f"   ✅ Ollama conectado correctamente")
-            print(f"   📊 Dimensión de embeddings: {len(response['embeddings'][0])}")
+            print(f"   📊 Dimensión de embeddings: {len(test_result)}")
             return True
-        return False
+        else:
+            print(f"   ❌ Ollama respondió pero el embedding está vacío")
+            return False
+            
     except Exception as e:
         print(f"   ❌ No se puede conectar a Ollama: {str(e)}")
         print(f"   💡 Asegúrate de que Ollama esté corriendo:")
@@ -88,37 +102,14 @@ def print_chunk_statistics(stats: Dict):
     print(f"         - Promedio: {stats['word_stats']['mean']:.0f}")
     print(f"         - Rango: {stats['word_stats']['min']} - {stats['word_stats']['max']}")
 
-def analyze_header_distribution(chunks: List[Dict]) -> Dict:
-    """Analiza la distribución de headers en los chunks"""
-    header_distribution = {}
-    header_levels = {}
-    
-    for chunk in chunks:
-        for key, value in chunk["metadata"].items():
-            if key.startswith("Header"):
-                # Contar por nivel de header
-                if key not in header_distribution:
-                    header_distribution[key] = 0
-                header_distribution[key] += 1
-                
-                # Almacenar valores únicos por nivel
-                if key not in header_levels:
-                    header_levels[key] = set()
-                header_levels[key].add(value)
-    
-    return {
-        "header_counts": header_distribution,
-        "unique_headers": {k: len(v) for k, v in header_levels.items()}
-    }
-
-def process_structural_chunking(markdown_file: Path, document_name: str) -> Optional[Tuple[List[Dict], Dict]]:
+def process_hybrid_chunking(markdown_file: Path, document_name: str) -> Optional[Tuple[List[Dict], Dict]]:
     """
-    Procesa chunking usando MarkdownHeaderTextSplitter
+    Procesa chunking combinando Structural + Semantic
     
     Estrategia:
-    - Divide por estructura markdown (headers #, ##, ###, ####)
-    - Preserva jerarquía de artículos, capítulos, secciones
-    - Mantiene metadatos de estructura legal
+    1. Divide por estructura (headers markdown)
+    2. Solo aplica semantic chunking a secciones > MIN_SECTION_SIZE_FOR_SEMANTIC
+    3. Secciones pequeñas se mantienen como un solo chunk
     
     Returns:
         Tuple con (chunks_con_metadata, estadísticas) o None si falla
@@ -138,73 +129,162 @@ def process_structural_chunking(markdown_file: Path, document_name: str) -> Opti
     
     print(f"   📊 Tamaño del contenido: {len(markdown_content):,} caracteres")
     
-    print(f"   ⚙️ Configurando markdown splitter...")
-    print(f"      - Headers a dividir: {len(HEADERS_TO_SPLIT)} niveles")
-    print(f"      - Strip headers: {STRIP_HEADERS}")
-    
-    try:
-        markdown_splitter = MarkdownHeaderTextSplitter(
-            headers_to_split_on=HEADERS_TO_SPLIT,
-            strip_headers=STRIP_HEADERS
-        )
-    except Exception as e:
-        print(f"   ❌ Error configurando splitter: {str(e)}")
-        return None
-    
-    print(f"   🔄 Dividiendo contenido por estructura markdown...")
+    # FASE 1: Structural Chunking (por headers)
+    print(f"   🏗️ FASE 1: Chunking Estructural (por headers markdown)...")
+    markdown_splitter = MarkdownHeaderTextSplitter(
+        headers_to_split_on=STRUCTURAL_HEADERS,
+        strip_headers=False  # Mantener headers en el contenido
+    )
     
     try:
         structural_chunks = markdown_splitter.split_text(markdown_content)
+        print(f"   ✅ Secciones estructurales generadas: {len(structural_chunks)}")
     except Exception as e:
-        print(f"   ❌ Error durante chunking: {str(e)}")
+        print(f"   ❌ Error en chunking estructural: {str(e)}")
         return None
     
-    if not structural_chunks:
-        print(f"   ⚠️ No se generaron chunks")
+    # FASE 2: Semantic Chunking en secciones grandes
+    print(f"   🧠 FASE 2: Semantic Chunking en secciones grandes (>{MIN_SECTION_SIZE_FOR_SEMANTIC} chars)...")
+    print(f"      Método: {SEMANTIC_METHOD}, Threshold: {SEMANTIC_THRESHOLD}")
+    
+    # Configurar embeddings para semantic chunking
+    try:
+        embeddings = OllamaEmbeddings(
+            model=OLLAMA_MODEL,
+            base_url=OLLAMA_BASE_URL
+        )
+    except Exception as e:
+        print(f"   ❌ Error configurando embeddings: {str(e)}")
         return None
     
-    print(f"   ✅ Chunking completado: {len(structural_chunks)} chunks generados")
+    # Configurar semantic chunker según método
+    try:
+        if SEMANTIC_METHOD == "gradient":
+            semantic_chunker = SemanticChunker(
+                embeddings=embeddings,
+                breakpoint_threshold_type="gradient",
+                add_start_index=True
+            )
+        elif SEMANTIC_METHOD == "standard_deviation":
+            semantic_chunker = SemanticChunker(
+                embeddings=embeddings,
+                breakpoint_threshold_type="standard_deviation",
+                breakpoint_threshold_amount=SEMANTIC_THRESHOLD if SEMANTIC_THRESHOLD else 3.0,
+                add_start_index=True
+            )
+        elif SEMANTIC_METHOD == "interquartile":
+            semantic_chunker = SemanticChunker(
+                embeddings=embeddings,
+                breakpoint_threshold_type="interquartile",
+                breakpoint_threshold_amount=SEMANTIC_THRESHOLD if SEMANTIC_THRESHOLD else 1.5,
+                add_start_index=True
+            )
+        else:  # percentile (default)
+            semantic_chunker = SemanticChunker(
+                embeddings=embeddings,
+                breakpoint_threshold_type="percentile",
+                breakpoint_threshold_amount=SEMANTIC_THRESHOLD if SEMANTIC_THRESHOLD else 95,
+                add_start_index=True
+            )
+    except Exception as e:
+        print(f"   ❌ Error configurando semantic chunker: {str(e)}")
+        return None
     
-    # Convertir a formato estándar con metadatos
-    print(f"   🏷️ Preparando metadatos de chunks...")
-    chunked_documents = []
+    # Aplicar semantic chunking solo a secciones grandes
+    hybrid_chunks = []
+    sections_subdivided = 0
+    sections_kept_whole = 0
     
-    for i, chunk in enumerate(structural_chunks):
-        # Extraer metadatos de headers
-        header_metadata = {}
-        for key, value in chunk.metadata.items():
-            if isinstance(value, str):
-                header_metadata[key] = value
+    for i, structural_chunk in enumerate(structural_chunks):
+        section_content = structural_chunk.page_content
+        section_size = len(section_content)
         
-        chunked_documents.append({
-            "content": chunk.page_content,
-            "metadata": {
-                "chunk_index": i,
-                "document_name": document_name,
-                "chunking_method": "structural",
-                "chunk_size": len(chunk.page_content),
-                "chunk_words": len(chunk.page_content.split()),
-                **header_metadata
-            }
+        # Decidir si aplicar semantic chunking
+        if section_size > MIN_SECTION_SIZE_FOR_SEMANTIC:
+            # Sección grande: aplicar semantic chunking
+            try:
+                print(f"      📄 Sección {i+1}: {section_size} chars → Subdividiendo...")
+                semantic_chunks = semantic_chunker.split_text(section_content)
+                sections_subdivided += 1
+                
+                for j, semantic_chunk in enumerate(semantic_chunks):
+                    hybrid_chunks.append({
+                        "content": semantic_chunk,
+                        "metadata": {
+                            "structural_chunk_index": i,
+                            "semantic_chunk_index": j,
+                            "total_semantic_chunks_in_section": len(semantic_chunks),
+                            "section_size": section_size,
+                            "was_subdivided": True,
+                            **structural_chunk.metadata
+                        }
+                    })
+                
+                print(f"         ✅ Generados {len(semantic_chunks)} sub-chunks")
+                
+            except Exception as e:
+                print(f"      ⚠️ Error en semantic chunking de sección {i+1}: {e}")
+                # Si falla, mantener la sección completa
+                hybrid_chunks.append({
+                    "content": section_content,
+                    "metadata": {
+                        "structural_chunk_index": i,
+                        "semantic_chunk_index": 0,
+                        "total_semantic_chunks_in_section": 1,
+                        "section_size": section_size,
+                        "was_subdivided": False,
+                        **structural_chunk.metadata
+                    }
+                })
+                sections_kept_whole += 1
+        else:
+            # Sección pequeña: mantener completa
+            hybrid_chunks.append({
+                "content": section_content,
+                "metadata": {
+                    "structural_chunk_index": i,
+                    "semantic_chunk_index": 0,
+                    "total_semantic_chunks_in_section": 1,
+                    "section_size": section_size,
+                    "was_subdivided": False,
+                    **structural_chunk.metadata
+                }
+            })
+            sections_kept_whole += 1
+    
+    print(f"   ✅ Hybrid Chunking completado:")
+    print(f"      - Secciones estructurales: {len(structural_chunks)}")
+    print(f"      - Secciones subdivididas: {sections_subdivided}")
+    print(f"      - Secciones completas: {sections_kept_whole}")
+    print(f"      - Total chunks finales: {len(hybrid_chunks)}")
+    
+    # Agregar metadatos finales
+    for idx, chunk in enumerate(hybrid_chunks):
+        chunk["metadata"].update({
+            "chunk_index": idx,
+            "document_name": document_name,
+            "chunking_method": "hybrid_structural_semantic",
+            "chunk_size": len(chunk["content"]),
+            "chunk_words": len(chunk["content"].split()),
+            "semantic_method": SEMANTIC_METHOD,
+            "semantic_threshold": SEMANTIC_THRESHOLD,
+            "min_section_size": MIN_SECTION_SIZE_FOR_SEMANTIC
         })
     
     # Analizar estadísticas
-    chunk_contents = [c["content"] for c in chunked_documents]
+    chunk_contents = [c["content"] for c in hybrid_chunks]
     stats = analyze_chunk_statistics(chunk_contents)
     print_chunk_statistics(stats)
     
-    # Analizar distribución de headers
-    header_dist = analyze_header_distribution(chunked_documents)
-    print(f"   📑 Distribución de headers:")
-    for header_level, count in sorted(header_dist["header_counts"].items()):
-        unique_count = header_dist["unique_headers"].get(header_level, 0)
-        print(f"      - {header_level}: {count} chunks ({unique_count} únicos)")
+    # Agregar info de estrategia a stats
+    stats["strategy"] = {
+        "structural_sections": len(structural_chunks),
+        "sections_subdivided": sections_subdivided,
+        "sections_kept_whole": sections_kept_whole,
+        "min_section_size_for_semantic": MIN_SECTION_SIZE_FOR_SEMANTIC
+    }
     
-    # Agregar info de headers a stats
-    stats["header_distribution"] = header_dist
-    
-    print(f"   ✅ Metadatos preparados: {len(chunked_documents)} documentos")
-    return chunked_documents, stats
+    return hybrid_chunks, stats
 
 def generate_embeddings_batch(embedding_controller: EmbeddingControllerQdrant, 
                               documents: List[str]) -> List:
@@ -252,8 +332,8 @@ def save_chunks_and_embeddings(chunks: List[Dict],
     
     print(f"   📁 Creando directorios de salida...")
     
-    chunking_dir = project_root / "src" / "output" / "chunking" / "structural"
-    preview_dir = project_root / "src" / "output" / "embeddings_preview" / "structural"
+    chunking_dir = project_root / "output" / "chunking" / "hybrid_p80_markdown"
+    preview_dir = project_root / "output" / "embeddings_preview" / "hybrid_p80_markdown"
     
     chunking_dir.mkdir(parents=True, exist_ok=True)
     preview_dir.mkdir(parents=True, exist_ok=True)
@@ -262,14 +342,10 @@ def save_chunks_and_embeddings(chunks: List[Dict],
     chunks_data = {
         "document_name": document_name,
         "statistics": stats,
-        "configuration": {
-            "headers_to_split": HEADERS_TO_SPLIT,
-            "strip_headers": STRIP_HEADERS
-        },
         "chunks": chunks
     }
     
-    chunks_file = chunking_dir / f"{document_name}_structural_chunks.json"
+    chunks_file = chunking_dir / f"{document_name}_hybrid_chunks.json"
     try:
         with open(chunks_file, 'w', encoding='utf-8') as f:
             json.dump(chunks_data, f, indent=2, ensure_ascii=False)
@@ -345,10 +421,12 @@ def save_chunks_and_embeddings(chunks: List[Dict],
     print(f"   📊 Generando preview de embeddings...")
     embeddings_preview = {
         "document_name": document_name,
-        "chunking_method": "structural",
+        "chunking_method": "hybrid_structural_semantic",
         "configuration": {
-            "headers_to_split": HEADERS_TO_SPLIT,
-            "strip_headers": STRIP_HEADERS,
+            "structural_headers": STRUCTURAL_HEADERS,
+            "min_section_size_for_semantic": MIN_SECTION_SIZE_FOR_SEMANTIC,
+            "semantic_method": SEMANTIC_METHOD,
+            "semantic_threshold": SEMANTIC_THRESHOLD,
             "model": OLLAMA_MODEL,
             "embedding_dimension": len(embeddings[0]) if embeddings else 0
         },
@@ -361,14 +439,15 @@ def save_chunks_and_embeddings(chunks: List[Dict],
             {
                 "index": i,
                 "size": len(chunks[i]["content"]),
-                "headers": {k: v for k, v in chunks[i]["metadata"].items() if k.startswith("Header")},
+                "structural_index": chunks[i]["metadata"]["structural_chunk_index"],
+                "was_subdivided": chunks[i]["metadata"]["was_subdivided"],
                 "preview": chunks[i]["content"][:200] + "..." if len(chunks[i]["content"]) > 200 else chunks[i]["content"]
             }
             for i in range(min(5, len(chunks)))
         ]
     }
     
-    preview_file = preview_dir / f"{document_name}_structural_embeddings_preview.json"
+    preview_file = preview_dir / f"{document_name}_hybrid_embeddings_preview.json"
     try:
         with open(preview_file, 'w', encoding='utf-8') as f:
             json.dump(embeddings_preview, f, indent=2, ensure_ascii=False)
@@ -380,12 +459,12 @@ def save_chunks_and_embeddings(chunks: List[Dict],
 
 def main():
     """Función principal"""
-    print("🚀 INICIANDO STRUCTURAL CHUNKING (VERSIÓN OPTIMIZADA)")
+    print("🚀 INICIANDO HYBRID CHUNKING (VERSIÓN OPTIMIZADA)")
     print("=" * 60)
-    print(f"📋 Estrategia: División por estructura markdown (headers)")
-    print(f"   - Preserva jerarquía de documentos legales")
-    print(f"   - Mantiene artículos, capítulos y secciones completas")
-    print(f"   - Headers: {[h[0] for h in HEADERS_TO_SPLIT]}")
+    print(f"📋 Estrategia: Structural + Semantic Híbrido")
+    print(f"   1. Divide por estructura (headers markdown)")
+    print(f"   2. Semantic chunking solo en secciones >{MIN_SECTION_SIZE_FOR_SEMANTIC} chars")
+    print(f"   3. Secciones pequeñas se mantienen completas")
     print()
     
     load_dotenv()
@@ -397,7 +476,7 @@ def main():
     print()
     
     project_root = Path(__file__).parent.parent
-    markdown_dir = project_root / "src" / "output" / "markdown"
+    markdown_dir = project_root / "output" / "markdown"
     
     if not markdown_dir.exists():
         print(f"❌ No se encontró el directorio: {markdown_dir}")
@@ -454,8 +533,8 @@ def main():
         print("-" * 60)
         
         try:
-            print(f"📝 FASE 1: Structural Chunking")
-            result = process_structural_chunking(markdown_path, document_name)
+            print(f"📝 FASE 1: Hybrid Chunking")
+            result = process_hybrid_chunking(markdown_path, document_name)
             
             if result is None:
                 print(f"❌ Error en chunking de {document_name}")
@@ -515,15 +594,16 @@ def main():
             print(f"⚠️ No se pudieron obtener estadísticas: {e}")
     
     if total_processed > 0:
-        print(f"\n🎉 Structural Chunking completado!")
+        print(f"\n🎉 Hybrid Chunking completado!")
         print(f"📁 Revisa los resultados en:")
-        print(f"   - output/chunking/structural/")
-        print(f"   - output/embeddings_preview/structural/")
+        print(f"   - output/chunking/hybrid_p80_markdown/")
+        print(f"   - output/embeddings_preview/hybrid_p80_markdown/")
         print(f"   - Base de conocimiento Qdrant: {COLLECTION_NAME}")
         print(f"\n📊 Configuración utilizada:")
         print(f"   - Modelo: {OLLAMA_MODEL}")
-        print(f"   - Headers: {[h[0] for h in HEADERS_TO_SPLIT]}")
-        print(f"   - Strip headers: {STRIP_HEADERS}")
+        print(f"   - Min section size: {MIN_SECTION_SIZE_FOR_SEMANTIC} chars")
+        print(f"   - Semantic method: {SEMANTIC_METHOD}")
+        print(f"   - Semantic threshold: {SEMANTIC_THRESHOLD}")
         print(f"   - Batch size: {EMBEDDING_BATCH_SIZE}")
     
     if total_failed > 0:

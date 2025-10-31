@@ -16,36 +16,46 @@ Un asistente virtual inteligente para consultas sobre normativa técnica en espa
 
 ### Componentes Principales
 
-1. **Ingestión de Documentos** (`src/ingestion/`)
+1. **Extracción de Documentos** (`src/extraction/`)
    - Extracción de texto con Mistral OCR (modelo `mistral-ocr-latest`)
-   - Procesamiento inteligente de PDFs con preservación de imágenes
-   - Chunking inteligente con MarkdownHeaderTextSplitter
-   - Contextualización automática con Mistral AI
+   - Procesamiento inteligente de PDFs y DOCX con preservación de estructura
+   - Conversión a Markdown normalizado
+   - Generación de metadata estructurada
 
-2. **Embeddings y Vectorización** (`src/embeddings/`)
+2. **Ingestión a Qdrant** (`src/ingestion/`)
+   - Scripts de chunking (recursive, semantic, structural, hybrid)
+   - Generación de embeddings con Ollama
+   - Almacenamiento vectorial en Qdrant
+   - Metadata normalizada para búsqueda
+
+3. **Embeddings y Vectorización** (`src/embeddings/`)
    - Generación de embeddings con modelo Ollama `nomic-embed-text`
    - Almacenamiento vectorial en Qdrant con configuración automática
    - Búsqueda de similitud semántica con distancia Cosine
    - Configuración: 768 dimensiones, almacenamiento en disco
 
-3. **Modelos de Lenguaje** (`src/llm/`)
+4. **Modelos de Lenguaje** (`src/llm/`)
    - Integración con Mistral AI (`mistral-small-latest`)
    - Procesamiento RAG optimizado con prompts centralizados
    - Respuestas siempre en español para el usuario
    - Sistema de prompts configurable por idioma
 
-4. **Interfaz de Usuario** (`src/`)
+5. **Interfaz de Usuario** (`src/ui/`)
    - Frontend web con Chainlit
-   - Configuración de visualización centralizada
-   - Sistema de traducción automática (español ↔ inglés)
+   - Sistema de traducción automática para Q&A (español ↔ inglés)
    - Manejo de errores y sugerencias de seguimiento
 
-5. **Configuración y Gestión** (`src/config/`)
+6. **Traducción de Documentos** (`src/translation/`)
+   - Traducción en tiempo real para Q&A (`translate_retrieval.py`)
+   - Traducción por lotes de documentos (`translate_documents_batch.py`)
+   - Traducción optimizada para documentos técnicos/legales
+
+7. **Configuración** (`config/`)
    - Configuración de visualización centralizada
    - Gestión de prompts por idioma
    - Configuración de elementos visuales y mensajes
 
-6. **Análisis y Evaluación** (`src/analysis/`, `src/evaluation/`)
+8. **Análisis y Evaluación** (`scripts/analysis/`, `src/evaluation/`)
    - Análisis de PDFs con PyMuPDF y PyPDF2
    - Detección de duplicados inteligente
    - Evaluación RAG con métricas RAGAS
@@ -177,11 +187,8 @@ docker run -d -p 11434:11434 --name ollama ollama/ollama:latest
 Una vez que los contenedores estén corriendo, ejecutar la aplicación:
 
 ```bash
-# 1. Entrar al directorio src
-cd src
-
-# 2. Ejecutar la aplicación Chainlit
-chainlit run frontend_rag.py --host 0.0.0.0 --port 8000
+# Ejecutar la aplicación Chainlit desde la raíz del proyecto
+chainlit run src/ui/app.py --host 0.0.0.0 --port 8000
 ```
 
 ### Puertos de Despliegue
@@ -272,23 +279,30 @@ curl -s http://localhost:11434             # Ollama
 ## Proceso de Ingestión de Documentos
 
 ### Flujo de Ingestión
-1. **Preparación**: Colocar PDFs en `data/test/`
-2. **Procesamiento**: Ejecutar script de ingestión llamado *ingestion_manual_mistral.py*
-3. **Validación**: Verificar completitud con monitor
-4. **Verificación**: Confirmar datos en Qdrant
+1. **Preparación**: Colocar PDFs/DOCX en `data/temp/`
+2. **Extracción**: Ejecutar `src/extraction/generate_markdown.py` para generar Markdown
+3. **Ingesta**: Ejecutar scripts en `src/ingestion/` para procesar y subir a Qdrant
+4. **Validación**: Verificar completitud con `scripts/validate_ingestion_status.py`
 
 ### Scripts de Ingestión Disponibles
 
-#### **Script Principal (Funciona Correctamente)**
+#### **Pipeline Completo de Ingestión**
 ```bash
-# Ingestión manual directa - FUNCIONA PERFECTAMENTE
-python3 src/ingestion_manual_mistral.py
+# 1. Extracción: PDFs/DOCX → Markdown
+python3 src/extraction/generate_markdown.py
+
+# 2. Ingesta: Markdown → Chunks → Embeddings → Qdrant
+python3 src/ingestion/test_recursive_character_chunking.py
+# O usar otros métodos de chunking:
+# - test_semantic_chunking.py
+# - test_structural_chunking.py
+# - test_hybrid_chunking.py
 ```
 **Características:**
-- Procesa todos los PDFs en `data/test/`
+- Extrae contenido de PDFs y DOCX en `data/temp/`
+- Genera archivos Markdown normalizados en `output/markdown/`
 - Genera embeddings y los almacena en Qdrant
-- Crea archivos de salida en `src/output/rag/`
-- **Recomendado para uso directo**
+- Crea archivos de salida en `output/chunking/` y `output/embeddings_preview/`
 
 #### **Script Robusto (Con Monitoreo)**
 ```bash
@@ -325,72 +339,82 @@ python3 scripts/validate_ingestion_integrity.py
 - Reporte detallado de integridad
 - **OBLIGATORIO ejecutar después de cada ingestión**
 
-### **Flujo Recomendado de Validación**
+### **Flujo Recomendado de Ingestión**
 ```bash
-# 1. Ejecutar ingestión
-python3 src/ingestion_manual_mistral.py
+# 1. Extracción: Convertir PDFs/DOCX a Markdown
+python3 src/extraction/generate_markdown.py
 
-# 2. Verificación rápida
-python3 scripts/ingestion_monitor.py
+# 2. Ingesta: Procesar Markdown y subir a Qdrant
+python3 src/ingestion/test_recursive_character_chunking.py
 
-# 3. Validación exhaustiva (CRÍTICO)
-python3 scripts/validate_ingestion_integrity.py
+# 3. Verificación rápida
+python3 scripts/validate_ingestion_status.py
+
+# 4. Validación exhaustiva (CRÍTICO si está disponible)
+# python3 scripts/validate_ingestion_integrity.py
 ```
 
 ### Estructura de Salida Organizada
 ```
-src/output/
-├── rag/                    # Salidas de procesamiento RAG
-│   ├── enhanced_chunks_v2_*.json    # Chunks procesados
-│   ├── contextualized_content.json  # Contenido contextualizado
-│   └── ingestion_manager_*.log      # Logs del gestor
+output/
+├── markdown/              # Archivos Markdown generados
+│   ├── EXTRA_DS_LEY/     # Por categoría de documentos
+│   ├── FMDS/
+│   └── NFPA/
+├── chunking/              # Chunks generados por método
+│   ├── recursive_character/
+│   ├── semantic/
+│   ├── structural/
+│   └── hybrid_p80_markdown/
+├── embeddings_preview/    # Previews de embeddings
+│   └── [mismo structure que chunking/]
 ├── analysis/              # Reportes de análisis
-│   ├── normativa_analysis_report.xlsx
-│   └── duplicate_analysis_report.xlsx
 └── evaluation/            # Resultados de evaluación
-    ├── evaluation_results_*.json
-    └── evaluation_summary_*.txt
 ```
 
 ### Notas Importantes para ML Engineers
-- **El script manual funciona perfectamente** cuando se ejecuta directamente
-- **El gestor robusto puede tener problemas** de subproceso
-- **Siempre verificar la salida** en `src/output/rag/`
-- **Monitorear logs** para detectar errores
-- **Qdrant debe estar corriendo** antes de iniciar ingestión
+- **El pipeline es de dos fases**: Extracción → Ingesta
+- **Qdrant y Ollama deben estar corriendo** antes de iniciar ingesta
+- **Los archivos Markdown se generan primero** en `output/markdown/`
+- **Siempre verificar la salida** en `output/chunking/` y `output/embeddings_preview/`
+- **Monitorear logs** para detectar errores durante el procesamiento
 
 
 ## Uso
 
-### Ingestión de Documentos
+### Extracción de Documentos
 ```bash
-cd src/
-python3 ingestion_manual_mistral.py
+# Extraer PDFs/DOCX y generar Markdown
+python3 src/extraction/generate_markdown.py
+```
+
+### Ingestión a Qdrant
+```bash
+# Procesar Markdown y subir a Qdrant (método Recursive Character)
+python3 src/ingestion/test_recursive_character_chunking.py
+
+# Otros métodos disponibles:
+python3 src/ingestion/test_semantic_chunking.py
+python3 src/ingestion/test_structural_chunking.py
+python3 src/ingestion/test_hybrid_chunking.py
 ```
 
 ### Frontend Web
 ```bash
-cd src/
-chainlit run frontend_rag.py --host 0.0.0.0 --port 8000
+# Ejecutar interfaz web Chainlit
+chainlit run src/ui/app.py --host 0.0.0.0 --port 8000
+```
+
+### Traducción de Documentos
+```bash
+# Traducción por lotes de documentos Markdown
+python3 src/translation/translate_documents_batch.py --input-dir output/markdown/EXTRA_DS_LEY --output-dir output/markdown/EXTRA_DS_LEY_EN --resume
 ```
 
 ### Validación de Ingestión
 ```bash
 # Verificar estado de ingestión
-python3 scripts/ingestion_monitor.py
-
-# Ejecutar ingestión manual (funciona correctamente)
-python3 src/ingestion_manual_mistral.py
-
-# Ejecutar ingestión robusta (con monitoreo)
-python3 scripts/robust_ingestion_manager.py
-```
-
-### Análisis de Documentos
-```bash
-cd src/analysis/
-python3 pdf_analyzer.py
-python3 duplicate_detector.py
+python3 scripts/validate_ingestion_status.py
 ```
 
 ### Evaluación RAG
@@ -402,37 +426,42 @@ python3 evaluate_rag.py
 ## 📁 Estructura del Proyecto
 
 ```
-├── src/
-│   ├── ingestion/                    # Procesamiento de documentos
-│   │   ├── ingest_mistral.py        # Controlador principal de ingestión
-│   │   └── pdf_processor.py         # Procesamiento de PDFs
-│   ├── embeddings/                   # Vectorización y búsqueda
-│   │   └── embedding_qdrant.py      # Controlador de embeddings con Qdrant
-│   ├── llm/                         # Modelos de lenguaje
-│   │   └── mistral_llm.py           # Integración con Mistral AI
-│   ├── translation/                  # Traducción automática
-│   │   └── translate.py             # Servicio de traducción
-│   ├── config/                      # Configuración
-│   │   ├── display_config.py        # Configuración de interfaz
-│   │   └── prompt_config.py         # Prompts del sistema
-│   ├── analysis/                    # Análisis de documentos
-│   │   ├── pdf_analyzer.py          # Análisis de PDFs
-│   │   └── duplicate_detector.py    # Detección de duplicados
-│   ├── evaluation/                  # Evaluación RAG
-│   │   ├── evaluate_rag.py          # Evaluación principal
-│   │   └── evaluation_ragas.py      # Métricas RAGAS
-│   ├── output/                      # Salidas organizadas
-│   │   ├── rag/                     # Salidas de procesamiento RAG
-│   │   ├── analysis/                # Reportes de análisis
-│   │   └── evaluation/              # Resultados de evaluación
-│   ├── frontend_rag.py              # Interfaz web principal
-│   └── ingestion_manual_mistral.py  # Script de ingestión manual
-├── scripts/                         # Scripts de utilidad
-│   ├── ingestion_monitor.py               # Monitoreo de estado de ingestión
-│   ├── robust_ingestion_manager.py        # Gestor robusto de ingestión para VPS
-│   └── validate_ingestion_integrity.py    # Validador exhaustivo de integridad
-├── data/                            # Documentos PDF
-│   └── test/                        # Carpeta de documentos de prueba
+├── src/                             # Código fuente del RAG
+│   ├── extraction/                  # Extracción de contenido
+│   │   ├── generate_markdown.py    # Script principal de extracción
+│   │   └── markdown_extraction.py # Controlador de extracción Mistral
+│   ├── ingestion/                   # Ingesta a Qdrant
+│   │   ├── test_recursive_character_chunking.py
+│   │   ├── test_semantic_chunking.py
+│   │   ├── test_structural_chunking.py
+│   │   └── test_hybrid_chunking.py
+│   ├── embeddings/                 # Vectorización y búsqueda
+│   │   └── embedding_qdrant.py     # Controlador de embeddings con Qdrant
+│   ├── llm/                        # Modelos de lenguaje
+│   │   └── mistral_llm.py          # Integración con Mistral AI
+│   ├── translation/                 # Traducción automática
+│   │   ├── translate_retrieval.py  # Traducción en tiempo real (Q&A)
+│   │   ├── translate_documents_batch.py  # Traducción por lotes
+│   │   └── translate_document.py   # Clase principal de traducción
+│   ├── ui/                         # Interfaz de usuario
+│   │   └── app.py                  # Interfaz web Chainlit (FASE B)
+│   └── evaluation/                 # Evaluación RAG
+│       ├── evaluate_ragas.py       # Métricas RAGAS
+│       └── run_evaluation.py       # Script de evaluación
+├── config/                          # Configuración (fuera de src/)
+│   ├── display_config.py           # Configuración de visualización
+│   └── prompt_config.py            # Prompts del sistema
+├── scripts/                         # Scripts utilitarios
+│   └── analysis/                    # Scripts de análisis
+├── output/                          # Datos generados (fuera de src/)
+│   ├── markdown/                    # Archivos Markdown generados
+│   ├── chunking/                    # Chunks generados
+│   ├── embeddings_preview/          # Previews de embeddings
+│   ├── analysis/                    # Reportes de análisis
+│   └── evaluation/                  # Resultados de evaluación
+├── data/                            # Documentos de entrada
+│   ├── temp/                        # PDFs/DOCX para procesar
+│   └── test/                        # Documentos de prueba
 └── chainlit.md                      # Configuración de Chainlit
 ```
 
@@ -500,7 +529,7 @@ python3 evaluate_rag.py
 
 #### Solución 1: Usar variable de entorno (Recomendado)
 ```bash
-CHAINLIT_DISABLE_DATA_LAYER=true chainlit run frontend_rag.py --host 0.0.0.0 --port 8000
+CHAINLIT_DISABLE_DATA_LAYER=true chainlit run src/ui/app.py --host 0.0.0.0 --port 8000
 ```
 
 #### Solución 2: Eliminar configuración automática
@@ -517,17 +546,17 @@ uv add "chainlit<2.6.0"
 **NOTA**: La versión <2.6.0 es la versión estable recomendada que no tiene problemas de data layer.
 
 ### Problemas de Ingestión
-1. **Script robusto no funciona**: Usar `src/ingestion_manual_mistral.py` directamente
-2. **No se crean archivos de salida**: Verificar permisos y directorio `src/output/rag/`
+1. **Error en extracción**: Verificar que los PDFs/DOCX estén en `data/temp/`
+2. **No se crean archivos de salida**: Verificar permisos y directorio `output/markdown/`
 3. **Qdrant no almacena datos**: Verificar conectividad y estado del contenedor
-4. **Timeout en procesamiento**: Aumentar timeout o usar script manual
+4. **Ollama no responde**: Verificar que Ollama esté corriendo en puerto 11434
 
 ### Logs y Debugging
 - Los logs se muestran en la consola
 - Usar `print()` para debugging en desarrollo
 - Verificar conectividad de servicios con `docker ps`
 - Usar scripts de validación para verificar estado
-- Monitorear logs en `src/output/rag/ingestion_manager_*.log`
+- Monitorear logs en la consola durante el procesamiento
 
 ### Troubleshooting de Chainlit
 ```bash
@@ -553,10 +582,7 @@ CHAINLIT_DISABLE_DATA_LAYER=true chainlit run frontend_rag.py --host 0.0.0.0 --p
 curl http://localhost:6333/collections
 
 # Verificar estado de ingestión
-python3 scripts/ingestion_monitor.py
-
-# Verificar logs de ingestión
-tail -f src/output/rag/ingestion_manager_*.log
+python3 scripts/validate_ingestion_status.py
 ```
 
 ## Contribución
@@ -588,7 +614,7 @@ Este proyecto está bajo la Licencia MIT. Ver `LICENSE` para más detalles.
 ### v0.2.0
 - **Nueva colección Qdrant**: `asistente-normativa-sincro-kb`
 - **Sistema de validación**: Scripts de verificación de completitud de ingestión
-- **Organización de salidas**: Estructura organizada en `src/output/`
+- **Organización de salidas**: Estructura organizada en `output/` (raíz del proyecto)
 - **Mejoras en ingestión**: Procesamiento optimizado con Mistral OCR
 - **Configuración centralizada**: Gestión unificada de prompts y visualización
 - **Análisis de documentos**: Herramientas de análisis y detección de duplicados

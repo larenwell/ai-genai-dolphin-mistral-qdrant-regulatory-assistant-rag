@@ -1,12 +1,12 @@
 """
-Robust CLI Tool for Document Translation with Resume Capability
+Batch CLI Tool for Document Translation with Resume Capability
 
 Usage:
     # Single file
-    python scripts/translate_markdown_robust.py --input input.md --output output.md
+    python src/translation/translate_documents_batch.py --input input.md --output output.md
     
     # Batch with resume capability
-    python scripts/translate_markdown_robust.py --input-dir spanish/ --output-dir english/ --resume
+    python src/translation/translate_documents_batch.py --input-dir spanish/ --output-dir english/ --resume
 """
 
 import sys

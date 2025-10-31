@@ -4,7 +4,7 @@ Script de generación de archivos Markdown desde PDFs y DOCX
 Procesa documentos técnicos y genera markdown + metadata normalizada
 
 NO hace ingesta a base de datos - solo genera archivos markdown
-La ingesta se hace posteriormente con test_semantic_chunking.py o test_recursive_character_chunking.py
+La ingesta se hace posteriormente con src/ingestion/test_semantic_chunking.py o src/ingestion/test_recursive_character_chunking.py
 """
 
 import os
@@ -286,7 +286,7 @@ def main():
     print("✅ PROCESAMIENTO COMPLETADO")
     print(f"{'='*80}")
     print(f"\n💡 PRÓXIMO PASO:")
-    print(f"   Ejecuta test_semantic_chunking.py o test_recursive_character_chunking.py")
+    print(f"   Ejecuta src/ingestion/test_semantic_chunking.py o src/ingestion/test_recursive_character_chunking.py")
     print(f"   para generar embeddings e ingestar en Qdrant")
     print(f"{'='*80}\n")
 
