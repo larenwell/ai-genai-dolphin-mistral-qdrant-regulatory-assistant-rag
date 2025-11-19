@@ -22,28 +22,63 @@ class EmbeddingControllerQdrant:
         if not self.qdrant_collection:
             raise ValueError("Qdrant collection name is required")
 
-        self.qdrant_client = QdrantClient(url=qdrant_url)
-
-        # Check if collection exists, if not create it
-        collections = self.qdrant_client.get_collections().collections
-        if not any(col.name == self.qdrant_collection for col in collections):
-            print(f"Creating new collection: {self.qdrant_collection}")
-            self.qdrant_client.create_collection(
-                collection_name=self.qdrant_collection,
-                vectors_config=models.VectorParams(
-                    size=768,  # Dimension for nomic-embed-text
-                    distance=models.Distance.COSINE
+        # Initialize Qdrant client with connection timeout
+        try:
+            print(f"🔗 Conectando a Qdrant en {qdrant_url}...")
+            self.qdrant_client = QdrantClient(url=qdrant_url, timeout=10)
+            
+            # Test connection by getting collections
+            print(f"🔍 Verificando colección '{self.qdrant_collection}'...")
+            collections = self.qdrant_client.get_collections().collections
+            
+            # Check if collection exists, if not create it
+            if not any(col.name == self.qdrant_collection for col in collections):
+                print(f"📦 Creando nueva colección: {self.qdrant_collection}")
+                self.qdrant_client.create_collection(
+                    collection_name=self.qdrant_collection,
+                    vectors_config=models.VectorParams(
+                        size=768,  # Dimension for nomic-embed-text
+                        distance=models.Distance.COSINE
+                    )
                 )
-            )
+                print(f"✅ Colección '{self.qdrant_collection}' creada exitosamente")
+            else:
+                print(f"✅ Colección '{self.qdrant_collection}' ya existe")
+                
+        except Exception as e:
+            error_msg = f"❌ Error conectando a Qdrant en {qdrant_url}: {str(e)}"
+            print(error_msg)
+            print(f"💡 Asegúrate de que Qdrant esté ejecutándose:")
+            print(f"   - Verifica: curl http://localhost:6333/collections")
+            print(f"   - O ejecuta: ./rag_system.sh start qdrant")
+            raise ConnectionError(error_msg) from e
 
     def generate_embeddings(self, text: str) -> list:
-        """Genera embeddings usando Ollama"""
-        try:
-            response = ollama.embed(model=self.model_name, input=text)
-            return response["embeddings"][0]
-        except Exception as e:
-            print(f"Error generating embedding: {e}")
-            return []
+        """Genera embeddings usando Ollama con manejo robusto de errores"""
+        max_retries = 3
+        retry_delay = 2
+        
+        for attempt in range(max_retries):
+            try:
+                response = ollama.embed(model=self.model_name, input=text)
+                if response and "embeddings" in response and len(response["embeddings"]) > 0:
+                    return response["embeddings"][0]
+                else:
+                    raise ValueError("Ollama response is empty or invalid")
+            except Exception as e:
+                if attempt < max_retries - 1:
+                    print(f"⚠️ Error generando embedding (intento {attempt + 1}/{max_retries}): {e}")
+                    print(f"   Reintentando en {retry_delay} segundos...")
+                    time.sleep(retry_delay)
+                else:
+                    error_msg = f"❌ Error crítico generando embedding después de {max_retries} intentos: {e}"
+                    print(error_msg)
+                    print(f"💡 Asegúrate de que Ollama esté ejecutándose:")
+                    print(f"   - Verifica: curl http://localhost:11434/api/tags")
+                    print(f"   - O ejecuta: ./rag_system.sh start ollama")
+                    raise ConnectionError(error_msg) from e
+        
+        return []
     
     def delete_collection(self):
         """Elimina la colección actual"""

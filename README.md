@@ -304,40 +304,17 @@ python3 src/ingestion/test_recursive_character_chunking.py
 - Genera embeddings y los almacena en Qdrant
 - Crea archivos de salida en `output/chunking/` y `output/embeddings_preview/`
 
-#### **Script Robusto (Con Monitoreo)**
-```bash
-# Gestor robusto con monitoreo de salud del sistema
-python3 scripts/robust_ingestion_manager.py
-```
-**Características:**
-- Monitoreo de salud del VPS
-- Manejo de timeouts y reintentos
-- Logs detallados de proceso
-- **Requiere configuración adicional**
-
-#### **Monitor de Estado**
+#### **Validación de Ingestión**
 ```bash
 # Verificar estado de ingestión
-python3 scripts/ingestion_monitor.py
+python3 scripts/validate_ingestion_status.py
 ```
 **Características:**
 - Estado de Qdrant y colecciones
 - Conteo de archivos procesados
-- **NUEVO**: Verificación básica de integridad de chunks
+- Verificación de integridad de chunks
 - Salud del sistema
 - Recomendaciones automáticas
-
-#### **Validador de Integridad**  **CRÍTICO**
-```bash
-# Validación exhaustiva de integridad
-python3 scripts/validate_ingestion_integrity.py
-```
-**Características:**
-- Verifica que todos los chunks generados estén en Qdrant
-- Análisis por archivo individual
-- Verificación de metadata (títulos, páginas, chunk_ids)
-- Reporte detallado de integridad
-- **OBLIGATORIO ejecutar después de cada ingestión**
 
 ### **Flujo Recomendado de Ingestión**
 ```bash
@@ -573,7 +550,7 @@ rm -rf .chainlit/
 lsof -ti:8000 | xargs kill -9
 
 # Ejecutar con data layer deshabilitado
-CHAINLIT_DISABLE_DATA_LAYER=true chainlit run frontend_rag.py --host 0.0.0.0 --port 8000
+CHAINLIT_DISABLE_DATA_LAYER=true chainlit run src/ui/app.py --host 0.0.0.0 --port 8000
 ```
 
 ### Validación de Estado

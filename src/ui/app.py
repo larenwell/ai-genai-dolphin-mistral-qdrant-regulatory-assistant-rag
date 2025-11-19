@@ -1,5 +1,6 @@
 # src/ui/app.py - FASE B: Explicit Translation Pipeline with Optimizations
 import os, sys
+import time
 from pathlib import Path
 sys.path.append(os.path.join(os.path.dirname(__file__), "../"))
 
@@ -353,9 +354,35 @@ def create_enhanced_message(content, author="Asistente", elements=None):
     return message
 
 
-# Initialize LLM and embedding controller
+# Initialize LLM
 llm = MistralLLM(api_key=os.getenv("MISTRAL_API_KEY"))
-embedding_admin = EmbeddingControllerQdrant()
+
+# Embedding controller - Lazy initialization to avoid connection errors at startup
+_embedding_admin = None
+
+def get_embedding_admin():
+    """Get or create embedding controller with retry logic"""
+    global _embedding_admin
+    if _embedding_admin is None:
+        max_retries = 5
+        retry_delay = 3
+        
+        for attempt in range(max_retries):
+            try:
+                print(f"🔍 Inicializando EmbeddingController (intento {attempt + 1}/{max_retries})...")
+                _embedding_admin = EmbeddingControllerQdrant()
+                print("✅ EmbeddingController inicializado correctamente")
+                return _embedding_admin
+            except Exception as e:
+                if attempt < max_retries - 1:
+                    print(f"⚠️ Error inicializando EmbeddingController: {e}")
+                    print(f"   Reintentando en {retry_delay} segundos...")
+                    time.sleep(retry_delay)
+                else:
+                    print(f"❌ Error crítico: No se pudo inicializar EmbeddingController después de {max_retries} intentos")
+                    raise
+        
+    return _embedding_admin
 
 
 def detect_language(text: str) -> str:
@@ -450,6 +477,7 @@ def process_query_fase_b(user_question: str) -> dict:
     
     # Step 5: Generate embedding and search KB (in English) with adaptive top_k
     print(f"🔍 Step 2/8: Generating embedding and searching KB (top_k={optimal_top_k})")
+    embedding_admin = get_embedding_admin()  # Lazy initialization
     embed_question = embedding_admin.generate_embeddings(search_query_en)
     context_results_raw = embedding_admin.load_and_query_qdrant(embed_question, top_k=optimal_top_k)
     
