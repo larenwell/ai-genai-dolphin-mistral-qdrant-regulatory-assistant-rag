@@ -1,5 +1,5 @@
 """
-Prompt Configuration Module - FASE B Optimized
+Prompt Configuration Module - FASE C
 
 FASE B: Configurado para KB pura inglés + Pipeline de traducción explícita
 - KB Storage: Pura EN (solo docs inglés)

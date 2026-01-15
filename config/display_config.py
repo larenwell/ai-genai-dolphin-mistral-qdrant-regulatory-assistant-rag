@@ -1,5 +1,5 @@
 """
-Display Configuration for Chainlit Frontend - FASE B Optimized
+Display Configuration for Chainlit Frontend - FASE C
 
 This module contains all the configuration parameters for the visual display
 and formatting of responses in the Chainlit interface.
@@ -46,39 +46,39 @@ VISUAL_ELEMENTS = {
     "show_pipeline_stats": False   # NEW: Mostrar estadísticas del pipeline (debug mode)
 }
 
-# Emojis and icons
+# Emojis and icons (DISABLED - no emojis allowed)
 EMOJIS = {
-    "welcome": "🚀",
-    "assistant": "🤖",
-    "sources": "📚",
-    "processing": "🔄",
-    "error": "❌",
-    "warning": "⚠️",
-    "suggestion": "💡",
-    "document": "📄",
-    "page": "📖",
-    "relevance": "🎯",
-    "score": "⭐",
-    # NEW: Question type emojis
-    "factual": "🔢",
-    "interpretative": "📖",
-    "comparative": "⚖️",
-    "procedural": "📋"
+    "welcome": "",
+    "assistant": "",
+    "sources": "",
+    "processing": "",
+    "error": "",
+    "warning": "",
+    "suggestion": "",
+    "document": "",
+    "page": "",
+    "relevance": "",
+    "score": "",
+    # Question type emojis
+    "factual": "",
+    "interpretative": "",
+    "comparative": "",
+    "procedural": ""
 }
 
-# Relevance score icons
+# Relevance score icons (DISABLED - no emojis allowed)
 RELEVANCE_ICONS = {
-    "high": "🟢",
-    "medium": "🟡", 
-    "low": "🔴"
+    "high": "",
+    "medium": "", 
+    "low": ""
 }
 
-# NEW: Question type badges
+# Question type badges (DISABLED - no emojis allowed)
 QUESTION_TYPE_BADGES = {
-    "factual": "🔢 **Dato Específico**",
-    "interpretative": "📖 **Análisis Detallado**",
-    "comparative": "⚖️ **Comparación**",
-    "procedural": "📋 **Procedimiento**"
+    "factual": "**Dato Específico**",
+    "interpretative": "**Análisis Detallado**",
+    "comparative": "**Comparación**",
+    "procedural": "**Procedimiento**"
 }
 
 # Follow-up suggestions - IMPROVED: Adaptadas por tipo de pregunta
@@ -119,7 +119,7 @@ FOLLOW_UP_SUGGESTIONS = {
 # Error messages
 ERROR_MESSAGES = {
     "processing_error": """
-### ❌ **Error en el procesamiento**
+### **Error en el procesamiento**
 
 Lo sentimos, hubo un problema al procesar tu consulta:
 
@@ -133,22 +133,22 @@ Lo sentimos, hubo un problema al procesar tu consulta:
 **¿Te gustaría intentar con otra pregunta?**
 """,
     
-    "no_sources": "📚 **No se encontraron fuentes relevantes para tu consulta.**",
-    "no_response": "🤖 **No se pudo generar una respuesta.**",
-    "processing": "🔄 **Procesando tu consulta...**",
+    "no_sources": "**No se encontraron fuentes relevantes para tu consulta.**",
+    "no_response": "**No se pudo generar una respuesta.**",
+    "processing": "**Procesando tu consulta...**",
     
-    # NEW: Translation errors
+    # Translation errors
     "translation_error": """
-### ⚠️ **Advertencia de Traducción**
+### **Advertencia de Traducción**
 
 Hubo un problema con la traducción automática, pero se generó una respuesta usando el contexto disponible.
 
 La calidad de la respuesta puede verse afectada. Si la información no es clara, intenta reformular tu pregunta.
 """,
     
-    # NEW: Low relevance warning
+    # Low relevance warning
     "low_relevance": """
-### ⚠️ **Relevancia Baja**
+### **Relevancia Baja**
 
 Los documentos encontrados tienen baja relevancia para tu consulta. La respuesta puede no ser completamente precisa.
 
@@ -161,16 +161,16 @@ Los documentos encontrados tienen baja relevancia para tu consulta. La respuesta
 
 # Welcome message
 WELCOME_MESSAGE = """
-## 🚀 **¡Bienvenido al Asistente de Normativa!**
+## **¡Bienvenido al Asistente de Normativa!**
 
 Soy tu asistente especializado en normativas técnicas y documentos de ingeniería. Puedo ayudarte con:
 
-- 🔢 **Datos específicos** - Medidas, plazos, especificaciones técnicas
-- 📖 **Análisis detallado** - Interpretación de normativas y regulaciones
-- ⚖️ **Comparaciones** - Diferencias entre estándares y procedimientos
-- 📋 **Procedimientos** - Pasos y requisitos para cumplimiento normativo
+- **Datos específicos** - Medidas, plazos, especificaciones técnicas
+- **Análisis detallado** - Interpretación de normativas y regulaciones
+- **Comparaciones** - Diferencias entre estándares y procedimientos
+- **Procedimientos** - Pasos y requisitos para cumplimiento normativo
 
-**💡 Consejo:** Formula preguntas claras y específicas para obtener mejores resultados.
+**Consejo:** Formula preguntas claras y específicas para obtener mejores resultados.
 
 **¿En qué puedo ayudarte hoy?**
 """
@@ -192,10 +192,10 @@ RESPONSE_FORMATTING = {
 
 # Source formatting
 SOURCE_FORMATTING = {
-    "header": "### 📚 **Fuentes consultadas**\n",
+    "header": "### **Fuentes consultadas**\n",
     "use_separators": False,
     "source_template": {
-        "title": "{number}. {relevance_icon} ",
+        "title": "{number}. ",
         "document": "**`{title}`**",
         "page": " p.{page}",
         "header": " - {header}",
@@ -204,17 +204,17 @@ SOURCE_FORMATTING = {
     "separator": "\n"
 }
 
-# NEW: Pipeline status messages (for debug mode)
+# Pipeline status messages (for debug mode)
 PIPELINE_STATUS = {
-    "question_classified": "📝 Tipo de pregunta: {question_type}",
-    "translation_start": "🔄 Traduciendo consulta...",
-    "translation_complete": "✅ Traducción completada",
-    "search_start": "🔍 Buscando en la base de conocimiento...",
-    "search_complete": "✅ Encontrados {chunks} documentos relevantes",
-    "filtering": "🔍 Filtrando resultados por relevancia...",
-    "filtering_complete": "✅ {filtered} documentos de alta relevancia",
-    "generating": "🤖 Generando respuesta...",
-    "generating_complete": "✅ Respuesta generada"
+    "question_classified": "Tipo de pregunta: {question_type}",
+    "translation_start": "Traduciendo consulta...",
+    "translation_complete": "Traducción completada",
+    "search_start": "Buscando en la base de conocimiento...",
+    "search_complete": "Encontrados {chunks} documentos relevantes",
+    "filtering": "Filtrando resultados por relevancia...",
+    "filtering_complete": "{filtered} documentos de alta relevancia",
+    "generating": "Generando respuesta...",
+    "generating_complete": "Respuesta generada"
 }
 
 
@@ -249,14 +249,10 @@ def get_relevance_icon(score):
         score: Relevance score (0-100)
     
     Returns:
-        Icon string (emoji)
+        Icon string (empty - no emojis allowed)
     """
-    if score >= SOURCE_DISPLAY["relevance_thresholds"]["high"]:
-        return RELEVANCE_ICONS["high"]
-    elif score >= SOURCE_DISPLAY["relevance_thresholds"]["medium"]:
-        return RELEVANCE_ICONS["medium"]
-    else:
-        return RELEVANCE_ICONS["low"]
+    # No emojis allowed - return empty string
+    return ""
 
 
 def get_question_type_badge(question_type: str) -> str:
@@ -267,9 +263,9 @@ def get_question_type_badge(question_type: str) -> str:
         question_type: Type of question
     
     Returns:
-        Badge string with emoji and label
+        Badge string with label (no emojis)
     """
-    return QUESTION_TYPE_BADGES.get(question_type, "❓ **Consulta General**")
+    return QUESTION_TYPE_BADGES.get(question_type, "**Consulta General**")
 
 
 def get_random_suggestion(question_type: str = None):
@@ -317,7 +313,7 @@ def format_error_message(error_type, **kwargs):
     Returns:
         Formatted error message string
     """
-    template = ERROR_MESSAGES.get(error_type, "❌ Error desconocido")
+    template = ERROR_MESSAGES.get(error_type, "Error desconocido")
     return template.format(**kwargs)
 
 

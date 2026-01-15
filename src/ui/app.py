@@ -9,6 +9,7 @@ from llm.mistral_llm import MistralLLM
 from translation.translate_retrieval import translate_text, get_translation_service
 from embeddings.embedding_qdrant import EmbeddingControllerQdrant
 from dotenv import load_dotenv
+from retrieval.hybrid_search import HybridSearchEngine
 
 
 from config.display_config import (
@@ -23,6 +24,7 @@ from config.display_config import (
 )
 
 from config.prompt_config import LANGUAGE_CONFIG, get_kb_language
+from config.retrieval_config import RERANKING_CONFIG
 
 project_root = Path(__file__).parent.parent
 sys.path.append(str(project_root))
@@ -36,6 +38,20 @@ DISPLAY_CONFIG = get_display_config()
 translation_service = get_translation_service()
 print(f"🌐 Translation service ready")
 
+# ============================================================================
+# HYBRID SEARCH ENGINE - NEW
+# ============================================================================
+
+_hybrid_search_engine = None
+
+def get_hybrid_search_engine():
+    """Get or create hybrid search engine with retry logic"""
+    global _hybrid_search_engine
+    if _hybrid_search_engine is None:
+        embedding_admin = get_embedding_admin()  # Reutilizar el existente
+        _hybrid_search_engine = HybridSearchEngine(embedding_admin)
+        print("✅ HybridSearchEngine inicializado")
+    return _hybrid_search_engine
 
 # ============================================================================
 # QUESTION TYPE CLASSIFICATION - NEW
@@ -263,20 +279,7 @@ def extract_header_from_text(text: str) -> str:
 
 
 def format_sources_for_display(context_results):
-    """
-    Format sources for display with metadata.
-    
-    AJUSTADO para metadata real de Qdrant:
-    - Usa source_file como nombre del documento
-    - Extrae headers del texto si existen
-    - NO incluye página (pendiente para FASE C)
-    
-    Args:
-        context_results: Lista de resultados de búsqueda
-    
-    Returns:
-        Texto formateado con fuentes
-    """
+    """Format sources for display with metadata."""
     if not context_results:
         return DISPLAY_CONFIG["error_messages"]["no_sources"]
     
@@ -284,28 +287,48 @@ def format_sources_for_display(context_results):
         max_sources = DISPLAY_CONFIG["source_display"].get("max_sources_displayed", 5)
         matches = context_results[:max_sources]
         
-        sources_text = DISPLAY_CONFIG["source_formatting"].get("header", "### 📚 **Fuentes consultadas**\n")
+        sources_text = DISPLAY_CONFIG["source_formatting"].get("header", "### **Fuentes consultadas**\n")
         
         for i, match in enumerate(matches, 1):
-            metadata = match.payload
+            # Handle both Qdrant result objects and dicts (from HybridSearchEngine)
+            if hasattr(match, 'payload'):
+                # Direct Qdrant result (FASE B)
+                metadata = match.payload
+                score = float(match.score) if hasattr(match, 'score') else 0.0
+            elif isinstance(match, dict):
+                # HybridSearchEngine result (FASE C)
+                metadata = match.get('payload', match)
+                # PRIORITY: final_score > score > 0.0 ✨ CORREGIDO
+                if 'final_score' in match:
+                    score = float(match['final_score'])
+                elif 'score' in match:
+                    score = float(match['score'])
+                else:
+                    score = 0.0
+            else:
+                # Fallback
+                metadata = match
+                score = 0.0
             
-            # Extract metadata with available fields
+            # Extract metadata
             source_file = metadata.get('source_file', 'Sin título')
             text = metadata.get('text', '')
             
-            # Limpiar nombre del archivo
+            # Clean filename
             title = source_file.replace('.pdf', '').replace('.docx', '').replace('_', ' ').strip()
             
-            # Intentar extraer header del texto
+            # Extract header
             header = extract_header_from_text(text)
             header_info = f" - {header}" if header else ""
             
-            # Score de relevancia
-            score = float(match.score)
-            score_percentage = int(score * 100)
+            # Score formatting
+            # Normalizar score usando configuración centralizada
+            # (los boost factors pueden hacer que final_score > 1.0)
+            max_score = RERANKING_CONFIG.get("max_score", 1.0)
+            normalized_score = min(float(score), max_score)
+            score_percentage = int(normalized_score * 100)
             relevance_icon = get_relevance_icon(score_percentage)
             
-            # Formato sin página (pendiente FASE C)
             source_line = f"{i}. {relevance_icon} **`{title}`**{header_info} _(relevancia: {score_percentage}%)_\n"
             sources_text += source_line
         
@@ -541,6 +564,93 @@ def process_query_fase_b(user_question: str) -> dict:
         "context_results": context_results
     }
 
+def process_query_fase_c(user_question: str) -> dict:
+    """
+    FASE C: Hybrid retrieval with metadata-aware re-ranking.
+    
+    Pipeline:
+    1. Classify question type
+    2. Translate ES→EN
+    3. HYBRID SEARCH (dense + sparse + metadata re-ranking)
+    4. LLM generate (EN)
+    5. Translate EN→ES
+    
+    Args:
+        user_question: User's question in any language
+    
+    Returns:
+        dict with response and metadata
+    """
+    
+    # Step 1: Classify question type
+    question_type = classify_question_type(user_question)
+    print(f"📝 Question type: {question_type}")
+    
+    # Step 2: Detect language
+    detected_language = detect_language(user_question)
+    print(f"🌐 Detected language: {detected_language}")
+    
+    # Step 3: Translate to English
+    kb_language = get_kb_language()
+    
+    if detected_language == "español":
+        print(f"🔄 Translating ES→EN")
+        search_query_en = translate_text(user_question, source_lang="es", target_lang="en")
+    else:
+        search_query_en = user_question
+    
+    # Step 4: HYBRID SEARCH ✨
+    print(f"🔍 Starting hybrid search...")
+    hybrid_engine = get_hybrid_search_engine()
+    
+    search_result = hybrid_engine.search(
+        query=search_query_en,
+        question_type=question_type
+    )
+    
+    context_en = search_result["context"]
+    final_chunks = search_result["chunks"]
+    stats = search_result["stats"]
+    
+    print(f"✅ Hybrid search complete:")
+    print(f"   Final chunks: {stats['final_chunks']}")
+    print(f"   Context size: {len(context_en)} chars")
+    print(f"   🔍 DEBUG: final_chunks type: {type(final_chunks)}, length: {len(final_chunks) if final_chunks else 0}")
+    if final_chunks:
+        print(f"   🔍 DEBUG: First chunk keys: {list(final_chunks[0].keys()) if isinstance(final_chunks[0], dict) else 'Not a dict'}")
+    else:
+        print(f"   ⚠️ DEBUG: final_chunks está vacío pero context_en tiene {len(context_en)} chars")
+    
+    # Step 5: LLM generate response
+    print(f"🤖 Generating response...")
+    llm.set_language("english")
+    response_en = llm.mistral_chat(
+        context=context_en,
+        question=search_query_en,
+        response_language="english",
+        question_type=question_type
+    )
+    
+    # Step 6: Translate response
+    print(f"🔄 Translating EN→ES")
+    response_es = translate_text(response_en, source_lang="en", target_lang="es")
+    
+    return {
+        "original_question": user_question,
+        "detected_language": detected_language,
+        "question_type": question_type,
+        "search_query_en": search_query_en,
+        "context_en": context_en,
+        "response_en": response_en,
+        "response_es": response_es,
+        "context_results": final_chunks,
+        "stats": stats,
+        # Campos adicionales para compatibilidad con format_sources_for_display- CORREGIDOS
+        "chunks_before_filter": stats.get("after_reranking", len(final_chunks)),
+        "chunks_after_filter": stats.get("final_chunks", len(final_chunks)),
+        "top_k_used": len(final_chunks)
+    }
+
 # ============================================================================
 # CHAINLIT EVENT HANDLERS
 # ============================================================================
@@ -557,7 +667,7 @@ async def start():
     if DISPLAY_CONFIG["visual_elements"].get("welcome_message", True):
         welcome_msg = DISPLAY_CONFIG.get(
             "welcome_message", 
-            "## 🚀 **¡Bienvenido al Asistente de Normativa!**\n\n¿En qué puedo ayudarte hoy?"
+            "## **¡Bienvenido al Asistente de Normativa!**\n\n¿En qué puedo ayudarte hoy?"
         )
         await cl.Message(content=welcome_msg, author="Asistente").send()
 
@@ -565,7 +675,7 @@ async def start():
 @cl.on_message
 async def main(message: cl.Message):
     """
-    Main message handler with FASE B explicit translation pipeline + optimizations.
+    Main message handler with FASE C hybrid retrieval.
     
     Flow:
     1. Update history
@@ -589,7 +699,7 @@ async def main(message: cl.Message):
     if DISPLAY_CONFIG["visual_elements"].get("processing_indicator", True):
         processing_msg = DISPLAY_CONFIG["error_messages"].get(
             "processing", 
-            "🔄 **Procesando tu consulta...**"
+            "**Procesando tu consulta...**"
         )
         await cl.Message(content=processing_msg, author="Sistema").send()
     
@@ -598,13 +708,13 @@ async def main(message: cl.Message):
         # STEP 3: Execute FASE B optimized pipeline
         # =====================================================================
         print(f"\n{'='*60}")
-        print(f"🚀 FASE B OPTIMIZED PIPELINE START")
+        print(f"🚀 FASE C HYBRID PIPELINE START")
         print(f"{'='*60}")
         
-        result = process_query_fase_b(message.content)
+        result = process_query_fase_c(message.content)
         
         print(f"{'='*60}")
-        print(f"✅ FASE B PIPELINE COMPLETE")
+        print(f"✅ FASE C PIPELINE COMPLETE")
         print(f"{'='*60}\n")
         
         # =====================================================================
@@ -634,7 +744,31 @@ async def main(message: cl.Message):
         # STEP 5: Display sources if configured
         # =====================================================================
         if DISPLAY_CONFIG["visual_elements"].get("source_attribution", True):
-            sources_content = format_sources_for_display(result["context_results"])
+            context_results = result.get("context_results", [])
+            
+            print(f"\n🔍 DEBUG SOURCES:")
+            print(f"   context_results type: {type(context_results)}")
+            print(f"   context_results length: {len(context_results) if context_results else 0}")
+            print(f"   context_en length: {len(result.get('context_en', ''))}")
+            print(f"   stats: {result.get('stats', {})}")
+            
+            # Si context_results está vacío pero hay contexto, hay un problema
+            if not context_results:
+                print(f"   ⚠️ PROBLEMA: context_results está vacío")
+                if result.get("context_en") and len(result.get("context_en", "")) > 0:
+                    print(f"   ⚠️ PERO hay contexto ({len(result.get('context_en', ''))} chars) - esto es inconsistente")
+                    stats = result.get("stats", {})
+                    print(f"   📊 Stats disponibles: {stats}")
+                    # Intentar obtener información de stats para debugging
+                    if stats.get("after_reranking", 0) > 0:
+                        print(f"   ℹ️ Había {stats.get('after_reranking')} chunks después de re-ranking")
+                    if stats.get("final_chunks", 0) == 0:
+                        print(f"   ⚠️ final_chunks es 0 según stats")
+            
+            sources_content = format_sources_for_display(context_results)
+            print(f"   sources_content length: {len(sources_content) if sources_content else 0}")
+            print(f"   sources_content preview: {sources_content[:200] if sources_content else 'None'}")
+            
             sources_message = create_enhanced_message(
                 content=sources_content,
                 author="Fuentes"
@@ -655,7 +789,7 @@ async def main(message: cl.Message):
                 # Get suggestion based on question type (adaptive)
                 suggestion = get_random_suggestion(question_type=result["question_type"])
                 await cl.Message(
-                    content=f"💡 **Sugerencia:** {suggestion}",
+                    content=f"**Sugerencia:** {suggestion}",
                     author="Sistema"
                 ).send()
             except Exception as e:
@@ -665,14 +799,27 @@ async def main(message: cl.Message):
         # =====================================================================
         # STEP 8: Show low relevance warning if needed
         # =====================================================================
-        if result["chunks_after_filter"] > 0:  # Only if we have chunks
+        chunks_after = result.get("chunks_after_filter", len(result.get("context_results", [])))
+        if chunks_after > 0:  # Only if we have chunks
             try:
-                # Calculate average relevance
-                avg_relevance = sum(c.score for c in result["context_results"]) / len(result["context_results"])
+                # Calculate average relevance (handle both Qdrant results and dicts)
+                scores = []
+                for c in result.get("context_results", []):
+                    if hasattr(c, 'score'):
+                        scores.append(c.score)
+                    elif isinstance(c, dict):
+                        # Solo agregar si tiene score válido
+                        if 'final_score' in c:
+                            scores.append(c['final_score'])
+                        elif 'score' in c:
+                            scores.append(c['score'])
+                        # Si no tiene score, NO agregar
+
+                avg_relevance = sum(scores) / len(scores) if scores else 0.0
                 
                 # Check if warning should be shown
-                if should_show_warning(result["chunks_after_filter"], avg_relevance):
-                    warning_msg = DISPLAY_CONFIG["error_messages"].get("low_relevance", "⚠️ Relevancia baja detectada")
+                if should_show_warning(chunks_after, avg_relevance):
+                    warning_msg = DISPLAY_CONFIG["error_messages"].get("low_relevance", "Relevancia baja detectada")
                     await cl.Message(
                         content=warning_msg,
                         author="Sistema"

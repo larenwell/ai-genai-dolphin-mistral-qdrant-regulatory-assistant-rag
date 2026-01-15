@@ -3,6 +3,7 @@ import uuid
 import ollama
 from dotenv import load_dotenv
 from qdrant_client import QdrantClient
+from qdrant_client.models import Filter
 from qdrant_client.http import models
 import time
 
@@ -24,11 +25,10 @@ class EmbeddingControllerQdrant:
 
         # Initialize Qdrant client with connection timeout
         try:
-            print(f"🔗 Conectando a Qdrant en {qdrant_url}...")
+            # Mensajes silenciosos - el logger del script principal mostrará la información
             self.qdrant_client = QdrantClient(url=qdrant_url, timeout=10)
             
             # Test connection by getting collections
-            print(f"🔍 Verificando colección '{self.qdrant_collection}'...")
             collections = self.qdrant_client.get_collections().collections
             
             # Check if collection exists, if not create it
@@ -42,8 +42,7 @@ class EmbeddingControllerQdrant:
                     )
                 )
                 print(f"✅ Colección '{self.qdrant_collection}' creada exitosamente")
-            else:
-                print(f"✅ Colección '{self.qdrant_collection}' ya existe")
+            # No mostrar mensaje si ya existe - el logger del script principal lo hará
                 
         except Exception as e:
             error_msg = f"❌ Error conectando a Qdrant en {qdrant_url}: {str(e)}"
@@ -81,7 +80,21 @@ class EmbeddingControllerQdrant:
         return []
     
     def delete_collection(self):
-        """Elimina la colección actual"""
+        """
+        Elimina la colección actual.
+        
+        ⚠️ PROTECCIÓN: No permite eliminar la colección protegida 'normativa-asistente-kb'
+        """
+        # PROTECCIÓN: No permitir eliminar la colección protegida
+        PROTECTED_COLLECTIONS = ["normativa-asistente-kb"]
+        
+        if self.qdrant_collection in PROTECTED_COLLECTIONS:
+            error_msg = f"❌ ERROR: No se puede eliminar la colección protegida '{self.qdrant_collection}'"
+            print(error_msg)
+            print(f"   💡 Esta colección contiene datos críticos y está protegida contra eliminación")
+            print(f"   💡 Si necesitas eliminar esta colección, hazlo manualmente desde Qdrant")
+            raise ValueError(error_msg)
+        
         try:
             self.qdrant_client.delete_collection(collection_name=self.qdrant_collection)
             print(f"✅ Colección '{self.qdrant_collection}' eliminada")
@@ -91,7 +104,21 @@ class EmbeddingControllerQdrant:
             return False
     
     def recreate_collection(self):
-        """Recrea la colección (borra y crea de nuevo)"""
+        """
+        Recrea la colección (borra y crea de nuevo).
+        
+        ⚠️ PROTECCIÓN: No permite recrear la colección protegida 'normativa-asistente-kb'
+        """
+        # PROTECCIÓN: No permitir recrear la colección protegida
+        PROTECTED_COLLECTIONS = ["normativa-asistente-kb"]
+        
+        if self.qdrant_collection in PROTECTED_COLLECTIONS:
+            error_msg = f"❌ ERROR: No se puede recrear la colección protegida '{self.qdrant_collection}'"
+            print(error_msg)
+            print(f"   💡 Esta colección contiene datos críticos y está protegida contra recreación")
+            print(f"   💡 Si necesitas recrear esta colección, hazlo manualmente desde Qdrant")
+            raise ValueError(error_msg)
+        
         try:
             # Verificar si existe
             collections = self.qdrant_client.get_collections().collections
@@ -293,20 +320,29 @@ class EmbeddingControllerQdrant:
                     failed_insertions += 1
                     continue
             
-            print(f"📊 Puntos preparados: {len(points_to_upsert)}")
+            print(f"📊 Puntos preparados: {len(points_to_upsert)}", flush=True)
+            
+            # Mostrar progreso al guardar en Qdrant
+            if len(points_to_upsert) > 100:
+                print(f"🔄 Guardando {len(points_to_upsert)} puntos en Qdrant (esto puede tardar)...", flush=True)
             
             # Upsert en lotes con reintentos
             batch_size = 50  # Reducido para mayor estabilidad
             max_retries = 3
+            total_points = len(points_to_upsert)
+            total_batches = (total_points-1)//batch_size + 1
+            
+            print(f"🔄 Guardando {total_points} puntos en Qdrant en {total_batches} lotes de {batch_size}...", flush=True)
             
             for i in range(0, len(points_to_upsert), batch_size):
                 batch = points_to_upsert[i:i + batch_size]
                 batch_num = i//batch_size + 1
-                total_batches = (len(points_to_upsert)-1)//batch_size + 1
+                points_inserted_so_far = min(i + batch_size, total_points)
                 
                 # Reintentos para cada lote
                 for retry in range(max_retries):
                     try:
+                        print(f"   🔄 Guardando lote {batch_num}/{total_batches} ({points_inserted_so_far}/{total_points} puntos)...", end='\r', flush=True)
                         result = self.qdrant_client.upsert(
                             collection_name=self.qdrant_collection,
                             points=batch
@@ -314,29 +350,30 @@ class EmbeddingControllerQdrant:
                         
                         if result.status == "completed":
                             successful_insertions += len(batch)
-                            print(f"✅ Lote {batch_num}/{total_batches}: {len(batch)} puntos insertados")
+                            print(f"   ✅ Lote {batch_num}/{total_batches}: {len(batch)} puntos insertados ({points_inserted_so_far}/{total_points} total)", flush=True)
                             break
                         else:
                             raise Exception(f"Upsert falló con status: {result.status}")
                             
                     except Exception as e:
                         if retry < max_retries - 1:
-                            print(f"⚠️ Lote {batch_num} falló (intento {retry + 1}/{max_retries}): {e}")
-                            print(f"   Reintentando en 2 segundos...")
+                            print(f"   ⚠️ Lote {batch_num} falló (intento {retry + 1}/{max_retries}): {e}", flush=True)
+                            print(f"      Reintentando en 2 segundos...", flush=True)
                             time.sleep(2)
                         else:
-                            print(f"❌ Lote {batch_num} falló definitivamente: {e}")
+                            print(f"   ❌ Lote {batch_num} falló definitivamente: {e}", flush=True)
                             failed_insertions += len(batch)
                 
                 # Pequeña pausa entre lotes para evitar sobrecarga
                 time.sleep(0.1)
             
             # Verificar inserción final
+            print(f"\n📊 Verificando inserción en Qdrant...", flush=True)
             final_count = self.qdrant_client.count(self.qdrant_collection).count
-            print(f"📊 Resumen de inserción:")
-            print(f"   ✅ Exitosos: {successful_insertions}")
-            print(f"   ❌ Fallidos: {failed_insertions}")
-            print(f"   📈 Total en colección: {final_count}")
+            print(f"📊 Resumen de inserción:", flush=True)
+            print(f"   ✅ Exitosos: {successful_insertions}", flush=True)
+            print(f"   ❌ Fallidos: {failed_insertions}", flush=True)
+            print(f"   📈 Total en colección: {final_count}", flush=True)
             
             if failed_insertions > 0:
                 print(f"⚠️ ADVERTENCIA: {failed_insertions} chunks no se insertaron correctamente")
@@ -349,21 +386,33 @@ class EmbeddingControllerQdrant:
             print(f"❌ Error crítico almacenando embeddings: {str(e)}")
             raise
 
-    def load_and_query_qdrant(self, query_embedding: list, top_k: int = 4):
+    def load_and_query_qdrant(self, query_embedding: list, top_k: int = 4,query_filter: Filter = None):
         """
-        Realiza una búsqueda de similitud en Qdrant
+        Realiza una búsqueda de similitud en Qdrant con soporte para filtros.
         
         Args:
             query_embedding: Vector de embedding de la consulta
             top_k: Número de resultados a retornar
+            query_filter: Filtro de Qdrant (opcional)
             
         Returns:
             Lista de resultados ordenados por similitud
         """
-        results = self.qdrant_client.search(
-            collection_name=self.qdrant_collection,
-            query_vector=query_embedding,
-            limit=top_k
-        )
+
+        search_params = {
+            "collection_name": self.qdrant_collection,
+            "query_vector": query_embedding,
+            "limit": top_k
+            }
+
+        if query_filter:
+            search_params["query_filter"] = query_filter
+
+        print(f"🔍 Parámetros de búsqueda: {search_params}")
+
+        results = self.qdrant_client.search(**search_params)
+
+        print(f"🔍 Resultados de búsqueda: {results}")
+        print(f"🔍 Resultados de búsqueda: {len(results)}")
         
         return results

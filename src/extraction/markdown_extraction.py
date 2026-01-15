@@ -80,7 +80,6 @@ class MistralExtractionController:
                 if pdf.metadata and pdf.metadata.get('/Title'):
                     title = pdf.metadata['/Title']
                     if title and len(title.strip()) > 0:
-                        print(f"   ✅ Título extraído de metadata: {title}")
                         return title.strip()
                 
                 # ESTRATEGIA 2: Primera página
@@ -92,12 +91,10 @@ class MistralExtractionController:
                         not line.startswith(('Page', 'Página', 'Date', 'Fecha')) and
                         not re.match(r'^\d+$', line) and
                         line[0].isupper()):
-                        print(f"   ✅ Título extraído de primera página: {line}")
                         return line
                 
                 # ESTRATEGIA 3: Fallback
                 fallback = Path(pdf_path).stem
-                print(f"   ⚠️  Usando nombre de archivo como título: {fallback}")
                 return fallback
                 
         except Exception as e:
@@ -126,6 +123,9 @@ class MistralExtractionController:
     def generate_document_id(self, source_file: str) -> str:
         """Genera un document_id único y consistente"""
         doc_id = Path(source_file).stem
+        # Eliminar sufijo _source si existe
+        if doc_id.endswith('_source'):
+            doc_id = doc_id[:-7]  # Remover '_source'
         doc_id = re.sub(r'[^\w\-]', '_', doc_id)
         return doc_id.upper()
         
@@ -259,11 +259,15 @@ class MistralExtractionController:
             return "\n\n".join([f"**{ms.get('pages', ms.get('section'))}:** {ms['summary']}" 
                                for ms in mini_summaries])
     
-    def extract_content_mistral_ocr(self, pdf_path: str, max_size_mb: int = 100) -> Optional[Dict[str, Any]]:
+    def extract_content_mistral_ocr(self, pdf_path: str, max_size_mb: int = 100, generate_summary: bool = False) -> Optional[Dict[str, Any]]:
         """
         Extrae contenido de PDF con Mistral OCR
         Si el PDF es muy grande, lo divide en chunks automáticamente
-        Genera mini-summaries durante el procesamiento y los combina al final
+        
+        Args:
+            pdf_path: Ruta al archivo PDF
+            max_size_mb: Tamaño máximo en MB antes de dividir en chunks
+            generate_summary: Si True, genera resumen del documento (puede ralentizar el proceso)
         """
         try:
             if not os.path.exists(pdf_path):
@@ -274,23 +278,37 @@ class MistralExtractionController:
             
             # PASO 1: Extraer metadata del documento
             print_sub_stage("EXTRACCIÓN DE METADATA DEL DOCUMENTO")
-            document_title = self.extract_document_title(pdf_path)
+            document_title = self.extract_document_title(pdf_path)  # Se usa internamente pero no se muestra
             source_file = os.path.basename(pdf_path)
             document_id = self.generate_document_id(source_file)
             
             print(f"   📋 Document ID: {document_id}")
-            print(f"   📄 Source File: {source_file}")
-            print(f"   📖 Title: {document_title}")
+            print(f"   📂 Archivo: {pdf_path}")
             
-            # PASO 2: Verificar tamaño del archivo
+            # PASO 2: Verificar tamaño del archivo y número de páginas
             file_size_mb = os.path.getsize(pdf_path) / (1024 * 1024)
             print(f"   📊 Tamaño archivo: {file_size_mb:.2f} MB")
             
+            # Obtener número de páginas para verificar límite de Mistral API (1000 páginas)
+            try:
+                with open(pdf_path, 'rb') as f:
+                    pdf_reader = PyPDF2.PdfReader(f)
+                    total_pages = len(pdf_reader.pages)
+                    print(f"   📄 Total páginas: {total_pages}")
+            except Exception as e:
+                print(f"   ⚠️  No se pudo obtener número de páginas: {e}")
+                total_pages = 0
+            
             # PASO 3: Decidir estrategia de procesamiento
-            process_in_chunks = file_size_mb > max_size_mb
+            # Dividir en chunks si: tamaño > max_size_mb O número de páginas > 1000 (límite de Mistral API)
+            MAX_PAGES_MISTRAL = 1000
+            process_in_chunks = file_size_mb > max_size_mb or total_pages > MAX_PAGES_MISTRAL
             
             if process_in_chunks:
-                print(f"   ⚠️  Archivo grande ({file_size_mb:.2f} MB > {max_size_mb} MB)")
+                if total_pages > MAX_PAGES_MISTRAL:
+                    print(f"   ⚠️  Archivo excede límite de páginas ({total_pages} > {MAX_PAGES_MISTRAL} páginas)")
+                elif file_size_mb > max_size_mb:
+                    print(f"   ⚠️  Archivo grande ({file_size_mb:.2f} MB > {max_size_mb} MB)")
                 print(f"   🔄 Procesando por chunks...")
                 
                 # Dividir PDF
@@ -305,6 +323,8 @@ class MistralExtractionController:
                 all_markdown_content = ""
                 total_pages = 0
                 mini_summaries = []
+                chunks_processed = 0
+                chunks_failed = []
                 
                 for chunk_info in pdf_chunks:
                     chunk_path = chunk_info['path']
@@ -315,11 +335,18 @@ class MistralExtractionController:
                     print(f"\n   📦 Chunk {chunk_idx + 1}/{len(pdf_chunks)} (páginas {start_page}-{end_page})")
                     
                     chunk_markdown = ""
+                    chunk_success = False
                     
                     try:
                         print(f"      🔄 Codificando...")
                         base64_chunk = self.encode_pdf(chunk_path)
                         if not base64_chunk:
+                            print(f"      ❌ Error: No se pudo codificar el chunk")
+                            chunks_failed.append({
+                                "chunk": chunk_idx + 1,
+                                "pages": f"{start_page}-{end_page}",
+                                "error": "Error codificando PDF"
+                            })
                             continue
                         
                         print(f"      🔄 Llamando a Mistral OCR...")
@@ -335,12 +362,27 @@ class MistralExtractionController:
                         
                         chunk_response = retry_with_backoff(call_mistral_ocr, max_retries=3, base_delay=2)
                         if chunk_response is None:
+                            print(f"      ❌ Error: No se pudo obtener respuesta de Mistral OCR")
+                            chunks_failed.append({
+                                "chunk": chunk_idx + 1,
+                                "pages": f"{start_page}-{end_page}",
+                                "error": "Error en Mistral OCR"
+                            })
                             continue
                         
                         print(f"      ✅ OCR completado")
                         
                         response_dict = json.loads(chunk_response.model_dump_json())
                         pages = response_dict.get("pages", [])
+                        
+                        if not pages:
+                            print(f"      ⚠️  Advertencia: Chunk procesado pero sin páginas extraídas")
+                            chunks_failed.append({
+                                "chunk": chunk_idx + 1,
+                                "pages": f"{start_page}-{end_page}",
+                                "error": "Sin páginas extraídas"
+                            })
+                            continue
                         
                         # Acumular contenido
                         for i, page in enumerate(pages):
@@ -351,9 +393,11 @@ class MistralExtractionController:
                             print(f"      ✅ Página {actual_page_num}: {len(page_content)} chars")
                         
                         total_pages += len(pages)
+                        chunks_processed += 1
+                        chunk_success = True
                         
-                        # Generar mini-summary del chunk
-                        if chunk_markdown.strip():
+                        # Generar mini-summary del chunk (solo si se solicita)
+                        if generate_summary and chunk_markdown.strip():
                             print(f"      📝 Generando mini-summary...")
                             try:
                                 mini_summary = self._generate_mini_summary(
@@ -373,7 +417,12 @@ class MistralExtractionController:
                                 print(f"      ⚠️  Error en mini-summary: {str(e)}")
                         
                     except Exception as chunk_error:
-                        print(f"      ❌ Error: {str(chunk_error)}")
+                        print(f"      ❌ Error procesando chunk: {str(chunk_error)}")
+                        chunks_failed.append({
+                            "chunk": chunk_idx + 1,
+                            "pages": f"{start_page}-{end_page}",
+                            "error": str(chunk_error)
+                        })
                         continue
                     
                     finally:
@@ -383,7 +432,22 @@ class MistralExtractionController:
                         except:
                             pass
                 
-                print(f"\n   ✅ Total: {len(all_markdown_content):,} chars, {total_pages} páginas")
+                # Validación crítica: verificar que todos los chunks se procesaron
+                print(f"\n   📊 RESUMEN DE PROCESAMIENTO:")
+                print(f"      ✅ Chunks procesados exitosamente: {chunks_processed}/{len(pdf_chunks)}")
+                print(f"      📄 Total páginas extraídas: {total_pages}")
+                print(f"      📝 Total caracteres: {len(all_markdown_content):,}")
+                
+                if chunks_failed:
+                    print(f"\n   ⚠️  ADVERTENCIA: {len(chunks_failed)} chunk(s) fallaron:")
+                    for failed in chunks_failed:
+                        print(f"      ❌ Chunk {failed['chunk']} (páginas {failed['pages']}): {failed['error']}")
+                    print(f"\n   ⚠️  El markdown final puede estar INCOMPLETO")
+                    print(f"   ⚠️  Revisa los errores antes de continuar con la ingesta")
+                else:
+                    print(f"\n   ✅ Todos los chunks se procesaron exitosamente")
+                    print(f"   ✅ El markdown contiene TODO el contenido del documento original")
+                
                 print(f"   📋 Mini-summaries: {len(mini_summaries)}")
                 markdown_content = all_markdown_content
                 
@@ -440,16 +504,19 @@ class MistralExtractionController:
             detected_language = self.detect_language(markdown_content)
             print(f"   🌐 Idioma: {detected_language}")
             
-            # Generar summary final
-            print_sub_stage("GENERACIÓN DE SUMMARY")
-            if process_in_chunks and mini_summaries:
-                print(f"   🔄 Combinando {len(mini_summaries)} mini-summaries...")
-                final_summary = self._combine_mini_summaries(mini_summaries, document_title)
-                print(f"   ✅ Summary final: {len(final_summary)} chars")
+            # Generar summary final (solo si se solicita)
+            if generate_summary:
+                print_sub_stage("GENERACIÓN DE SUMMARY")
+                if process_in_chunks and mini_summaries:
+                    print(f"   🔄 Combinando {len(mini_summaries)} mini-summaries...")
+                    final_summary = self._combine_mini_summaries(mini_summaries, document_title)
+                    print(f"   ✅ Summary final: {len(final_summary)} chars")
+                else:
+                    print(f"   🔄 Generando summary directo...")
+                    final_summary = self.generate_document_summary(markdown_content)
+                    print(f"   ✅ Summary: {len(final_summary)} chars")
             else:
-                print(f"   🔄 Generando summary directo...")
-                final_summary = self.generate_document_summary(markdown_content)
-                print(f"   ✅ Summary: {len(final_summary)} chars")
+                final_summary = ""
             
             print(f"✅ Extracción completada: {len(markdown_content):,} caracteres")
             

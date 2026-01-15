@@ -12,6 +12,15 @@ HOST="0.0.0.0"
 RAG_PORT="8000"
 DATALAYER_PORT="5555"
 
+# IPs permitidas para acceso al puerto 8000 (RAG Service)
+ALLOWED_IPS=(
+    "209.45.68.70"
+    "161.132.3.56"
+    "161.132.3.57"
+    "161.132.3.58"
+    "161.132.3.59"
+)
+
 # Colores para output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -89,6 +98,241 @@ check_docker_services() {
     fi
 }
 
+check_firewall_rules() {
+    # Verificar si existen reglas de iptables para el puerto 8000
+    if iptables -L INPUT -n 2>/dev/null | grep -q ":$RAG_PORT"; then
+        return 0
+    else
+        return 1
+    fi
+}
+
+# ============================================================================
+# FUNCIONES DE FIREWALL
+# ============================================================================
+
+configure_firewall() {
+    echo -e "${BLUE}🔥 Configurando firewall para puerto $RAG_PORT...${NC}"
+    
+    # Verificar si el usuario tiene permisos de root o sudo
+    if [ "$EUID" -ne 0 ]; then
+        echo -e "${YELLOW}⚠️  Se requieren permisos de root para configurar firewall${NC}"
+        echo -e "${CYAN}💡 Intentando con sudo...${NC}"
+        SUDO_CMD="sudo"
+    else
+        SUDO_CMD=""
+    fi
+    
+    # Primero, eliminar reglas existentes para el puerto 8000 (si existen)
+    echo -e "${BLUE}🧹 Limpiando reglas existentes para puerto $RAG_PORT...${NC}"
+    $SUDO_CMD iptables -D INPUT -p tcp --dport $RAG_PORT -j DROP 2>/dev/null || true
+    
+    # Eliminar reglas de IPs permitidas existentes
+    for ip in "${ALLOWED_IPS[@]}"; do
+        $SUDO_CMD iptables -D INPUT -p tcp -s "$ip" --dport $RAG_PORT -j ACCEPT 2>/dev/null || true
+    done
+    
+    # Agregar reglas para permitir solo las IPs especificadas
+    echo -e "${BLUE}✅ Agregando reglas para IPs permitidas...${NC}"
+    for ip in "${ALLOWED_IPS[@]}"; do
+        $SUDO_CMD iptables -I INPUT -p tcp -s "$ip" --dport $RAG_PORT -j ACCEPT
+        if [ $? -eq 0 ]; then
+            echo -e "${GREEN}  ✅ IP permitida: $ip${NC}"
+        else
+            echo -e "${RED}  ❌ Error al agregar regla para IP: $ip${NC}"
+            return 1
+        fi
+    done
+    
+    # Bloquear todas las demás conexiones al puerto 8000
+    echo -e "${BLUE}🔒 Bloqueando acceso desde otras IPs al puerto $RAG_PORT...${NC}"
+    $SUDO_CMD iptables -A INPUT -p tcp --dport $RAG_PORT -j DROP
+    if [ $? -eq 0 ]; then
+        echo -e "${GREEN}✅ Regla de bloqueo agregada${NC}"
+    else
+        echo -e "${RED}❌ Error al agregar regla de bloqueo${NC}"
+        return 1
+    fi
+    
+    # Guardar reglas de iptables de forma persistente
+    echo -e "${BLUE}💾 Guardando reglas de firewall de forma persistente...${NC}"
+    
+    # Intentar guardar con netfilter-persistent (método preferido)
+    if command -v netfilter-persistent &> /dev/null; then
+        if $SUDO_CMD netfilter-persistent save >/dev/null 2>&1; then
+            echo -e "${GREEN}✅ Reglas guardadas con netfilter-persistent (persistentes después de reinicio)${NC}"
+        else
+            echo -e "${YELLOW}⚠️  No se pudo guardar con netfilter-persistent, intentando método alternativo...${NC}"
+            save_firewall_rules_manual
+        fi
+    # Método alternativo: guardar manualmente en /etc/iptables/rules.v4
+    elif command -v iptables-save &> /dev/null; then
+        save_firewall_rules_manual
+    else
+        echo -e "${RED}❌ Error: No se encontró iptables-save${NC}"
+        return 1
+    fi
+    
+    echo -e "${GREEN}✅ Firewall configurado correctamente y guardado de forma persistente${NC}"
+    return 0
+}
+
+save_firewall_rules_manual() {
+    # Crear directorio si no existe
+    $SUDO_CMD mkdir -p /etc/iptables 2>/dev/null || true
+    
+    # Guardar todas las reglas de iptables
+    if $SUDO_CMD iptables-save > /tmp/iptables_rules_backup.txt 2>/dev/null; then
+        if $SUDO_CMD cp /tmp/iptables_rules_backup.txt /etc/iptables/rules.v4 2>/dev/null; then
+            echo -e "${GREEN}✅ Reglas guardadas en /etc/iptables/rules.v4${NC}"
+            
+            # Crear script de inicio para restaurar reglas al arrancar
+            create_firewall_restore_script
+            
+            # Limpiar archivo temporal
+            rm -f /tmp/iptables_rules_backup.txt 2>/dev/null || true
+            
+            return 0
+        else
+            echo -e "${YELLOW}⚠️  No se pudo guardar en /etc/iptables/rules.v4 (puede requerir permisos)${NC}"
+            echo -e "${CYAN}💡 Las reglas están activas pero no serán persistentes después de reiniciar${NC}"
+            rm -f /tmp/iptables_rules_backup.txt 2>/dev/null || true
+            return 1
+        fi
+    else
+        echo -e "${YELLOW}⚠️  No se pudo guardar las reglas${NC}"
+        return 1
+    fi
+}
+
+create_firewall_restore_script() {
+    # Crear script systemd para restaurar reglas al arrancar
+    local script_path="/etc/systemd/system/rag-firewall-restore.service"
+    
+    # Verificar si ya existe y está habilitado
+    if [ -f "$script_path" ]; then
+        if $SUDO_CMD systemctl is-enabled rag-firewall-restore.service >/dev/null 2>&1; then
+            echo -e "${CYAN}ℹ️  Servicio de restauración ya existe y está habilitado${NC}"
+            return 0
+        fi
+    fi
+    
+    # Crear servicio systemd para restaurar reglas al arrancar
+    $SUDO_CMD tee "$script_path" > /dev/null <<EOF
+[Unit]
+Description=Restore RAG Firewall Rules for Port 8000
+After=network.target
+Before=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/bin/bash -c 'if [ -f /etc/iptables/rules.v4 ]; then iptables-restore < /etc/iptables/rules.v4; fi'
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+    if [ $? -eq 0 ]; then
+        # Habilitar el servicio
+        $SUDO_CMD systemctl daemon-reload 2>/dev/null || true
+        $SUDO_CMD systemctl enable rag-firewall-restore.service 2>/dev/null || true
+        echo -e "${GREEN}✅ Servicio de restauración de firewall creado y habilitado${NC}"
+        echo -e "${CYAN}💡 Las reglas se restaurarán automáticamente al reiniciar el sistema${NC}"
+    else
+        echo -e "${YELLOW}⚠️  No se pudo crear el servicio de restauración${NC}"
+        echo -e "${CYAN}💡 Puedes restaurar manualmente con: iptables-restore < /etc/iptables/rules.v4${NC}"
+    fi
+}
+
+restore_firewall_rules() {
+    echo -e "${BLUE}🔄 Verificando y restaurando reglas de firewall...${NC}"
+    
+    # Verificar si las reglas ya están presentes
+    if check_firewall_rules; then
+        echo -e "${GREEN}✅ Las reglas de firewall ya están activas${NC}"
+        return 0
+    fi
+    
+    # Verificar si existe archivo de reglas guardadas
+    if [ -f "/etc/iptables/rules.v4" ]; then
+        echo -e "${BLUE}📂 Restaurando reglas desde /etc/iptables/rules.v4...${NC}"
+        
+        # Verificar si el usuario tiene permisos de root o sudo
+        if [ "$EUID" -ne 0 ]; then
+            SUDO_CMD="sudo"
+        else
+            SUDO_CMD=""
+        fi
+        
+        if $SUDO_CMD iptables-restore < /etc/iptables/rules.v4 2>/dev/null; then
+            echo -e "${GREEN}✅ Reglas de firewall restauradas correctamente${NC}"
+            return 0
+        else
+            echo -e "${YELLOW}⚠️  No se pudieron restaurar las reglas desde el archivo guardado${NC}"
+            echo -e "${CYAN}💡 Reconfigurando firewall...${NC}"
+            configure_firewall
+            return $?
+        fi
+    else
+        echo -e "${YELLOW}⚠️  No se encontró archivo de reglas guardadas${NC}"
+        echo -e "${CYAN}💡 Configurando firewall por primera vez...${NC}"
+        configure_firewall
+        return $?
+    fi
+}
+
+remove_firewall_rules() {
+    echo -e "${BLUE}🧹 Eliminando reglas de firewall para puerto $RAG_PORT...${NC}"
+    
+    # Verificar si el usuario tiene permisos de root o sudo
+    if [ "$EUID" -ne 0 ]; then
+        SUDO_CMD="sudo"
+    else
+        SUDO_CMD=""
+    fi
+    
+    # Eliminar regla de bloqueo
+    $SUDO_CMD iptables -D INPUT -p tcp --dport $RAG_PORT -j DROP 2>/dev/null || true
+    
+    # Eliminar reglas de IPs permitidas
+    for ip in "${ALLOWED_IPS[@]}"; do
+        $SUDO_CMD iptables -D INPUT -p tcp -s "$ip" --dport $RAG_PORT -j ACCEPT 2>/dev/null || true
+    done
+    
+    # Actualizar reglas guardadas
+    if command -v netfilter-persistent &> /dev/null; then
+        $SUDO_CMD netfilter-persistent save 2>/dev/null || true
+    elif [ -f /etc/iptables/rules.v4 ]; then
+        $SUDO_CMD iptables-save > /etc/iptables/rules.v4 2>/dev/null || true
+    fi
+    
+    echo -e "${GREEN}✅ Reglas de firewall eliminadas${NC}"
+    return 0
+}
+
+show_firewall_status() {
+    echo -e "${BLUE}🔥 Estado del firewall para puerto $RAG_PORT:${NC}"
+    
+    if check_firewall_rules; then
+        echo -e "${GREEN}✅ Reglas de firewall activas${NC}"
+        echo ""
+        echo -e "${CYAN}IPs permitidas:${NC}"
+        for ip in "${ALLOWED_IPS[@]}"; do
+            if iptables -L INPUT -n 2>/dev/null | grep -q "$ip.*$RAG_PORT"; then
+                echo -e "${GREEN}  ✅ $ip${NC}"
+            else
+                echo -e "${RED}  ❌ $ip (regla no encontrada)${NC}"
+            fi
+        done
+        echo ""
+        echo -e "${CYAN}Reglas de iptables para puerto $RAG_PORT:${NC}"
+        iptables -L INPUT -n 2>/dev/null | grep -A 10 ":$RAG_PORT" || echo -e "${YELLOW}  No se encontraron reglas${NC}"
+    else
+        echo -e "${RED}❌ No hay reglas de firewall configuradas${NC}"
+    fi
+}
+
 # ============================================================================
 # FUNCIONES DE INICIO DE SERVICIOS
 # ============================================================================
@@ -124,14 +368,44 @@ start_qdrant() {
         echo -e "${CYAN}   Verificando si podemos usar el puerto 6333...${NC}"
     fi
     
+    # Verificar si el contenedor qdrant-rag existe y validar su volumen
+    # IMPORTANTE: Usar ruta absoluta para evitar problemas con cambios de directorio
+    PROJECT_DIR="${PROJECT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)}"
+    expected_volume="${PROJECT_DIR}/qdrant_storage"
+    
+    # Asegurar que el directorio existe
+    mkdir -p "$expected_volume"
+    
+    if docker ps -a --format "{{.Names}}" | grep -q "^qdrant-rag$"; then
+        # Verificar el volumen montado
+        current_volume=$(docker inspect qdrant-rag 2>/dev/null | grep -A 5 '"Mounts"' | grep '"Source"' | head -1 | sed 's/.*"Source": "\([^"]*\)".*/\1/')
+        
+        # Normalizar rutas para comparación (resolver rutas relativas y symlinks)
+        current_volume=$(readlink -f "$current_volume" 2>/dev/null || echo "$current_volume")
+        expected_volume=$(readlink -f "$expected_volume" 2>/dev/null || echo "$expected_volume")
+        
+        if [ -n "$current_volume" ] && [ "$current_volume" != "$expected_volume" ]; then
+            echo -e "${YELLOW}⚠️  El contenedor qdrant-rag tiene un volumen incorrecto${NC}"
+            echo -e "${CYAN}   Volumen actual: $current_volume${NC}"
+            echo -e "${CYAN}   Volumen esperado: $expected_volume${NC}"
+            echo -e "${RED}⚠️  ADVERTENCIA: Esto puede causar pérdida de datos${NC}"
+            echo -e "${BLUE}🔄 Recreando contenedor con el volumen correcto...${NC}"
+            
+            # Detener y eliminar el contenedor con volumen incorrecto
+            docker stop qdrant-rag 2>/dev/null || true
+            docker rm qdrant-rag 2>/dev/null || true
+        fi
+    fi
+    
     # Crear nuevo contenedor si no existe uno con el nombre esperado
     if ! docker ps -a --format "{{.Names}}" | grep -q "^qdrant-rag$"; then
         echo -e "${BLUE}🚀 Creando nuevo contenedor Qdrant...${NC}"
+        echo -e "${CYAN}   Volumen: $expected_volume${NC}"
         docker run -d \
             --name qdrant-rag \
             -p 6333:6333 \
             -p 6334:6334 \
-            -v $(pwd)/qdrant_storage:/qdrant/storage \
+            -v "${expected_volume}:/qdrant/storage" \
             qdrant/qdrant:latest
     else
         # Si existe pero está detenido, iniciarlo
@@ -340,6 +614,12 @@ start_rag_service() {
     
     if check_rag_service; then
         echo -e "${YELLOW}⚠️  El servicio RAG ya está ejecutándose${NC}"
+        
+        # Verificar y restaurar reglas de firewall si es necesario
+        if ! check_firewall_rules; then
+            echo -e "${YELLOW}⚠️  Reglas de firewall no encontradas, restaurando...${NC}"
+            restore_firewall_rules || true
+        fi
         return 0
     fi
     
@@ -349,6 +629,16 @@ start_rag_service() {
         echo -e "${RED}❌ Error: No se puede iniciar el servicio RAG sin las dependencias${NC}"
         echo -e "${YELLOW}💡 Asegúrate de que Qdrant, Ollama y PostgreSQL estén ejecutándose${NC}"
         return 1
+    fi
+    
+    # Verificar y restaurar/configurar firewall para permitir solo IPs autorizadas
+    echo ""
+    echo -e "${BLUE}🔥 Verificando y restaurando firewall (automático y persistente)...${NC}"
+    if ! restore_firewall_rules; then
+        echo -e "${YELLOW}⚠️  Advertencia: No se pudo configurar/restaurar el firewall${NC}"
+        echo -e "${CYAN}💡 El servicio se iniciará, pero el firewall puede no estar configurado${NC}"
+        echo -e "${CYAN}💡 Verifica los permisos de root/sudo para configurar iptables${NC}"
+        echo -e "${CYAN}💡 Puedes configurarlo manualmente con: ./rag_system.sh firewall configure${NC}"
     fi
     
     echo "🚀 Iniciando servicio RAG persistente..."
@@ -607,6 +897,15 @@ start_all() {
     fi
     
     echo ""
+    echo -e "${YELLOW}🔥 FASE 2.6: Verificación y configuración de firewall${NC}"
+    restore_firewall_rules || {
+        echo -e "${YELLOW}⚠️  Advertencia: No se pudo configurar/restaurar el firewall${NC}"
+        echo -e "${CYAN}💡 El sistema continuará, pero el firewall puede no estar configurado${NC}"
+        echo -e "${CYAN}💡 Puedes configurarlo manualmente con: ./rag_system.sh firewall configure${NC}"
+        # No marcamos como error crítico, solo advertencia
+    }
+    
+    echo ""
     echo -e "${YELLOW}🎯 FASE 3: Servicios principales${NC}"
     start_rag_service || ((errors++))
     start_prisma_studio || ((errors++))
@@ -661,6 +960,54 @@ restart_all() {
     start_all
 }
 
+restart_rag_service() {
+    echo -e "${PURPLE}🔄 REINICIANDO SOLO SERVICIO RAG${NC}"
+    echo "=================================================================="
+    echo -e "${YELLOW}⚠️  NOTA: Este comando NO reinicia Ollama, Qdrant u otros servicios${NC}"
+    echo -e "${CYAN}💡 Esto permite que el proceso de ingesta continúe sin interrupciones${NC}"
+    echo "=================================================================="
+    
+    # Detener solo el servicio RAG
+    if check_rag_service; then
+        echo -e "${BLUE}🛑 Deteniendo servicio RAG...${NC}"
+        screen -S "$RAG_SERVICE_NAME" -X quit
+        sleep 2
+        echo -e "${GREEN}✅ Servicio RAG detenido${NC}"
+    else
+        echo -e "${YELLOW}⚠️  El servicio RAG no estaba ejecutándose${NC}"
+    fi
+    
+    # Iniciar solo el servicio RAG
+    echo -e "${BLUE}🚀 Iniciando servicio RAG...${NC}"
+    if validate_all_services; then
+        start_rag_service
+    else
+        echo -e "${RED}❌ No se puede iniciar RAG sin las dependencias${NC}"
+        return 1
+    fi
+}
+
+restart_datalayer_service() {
+    echo -e "${PURPLE}🔄 REINICIANDO SOLO DATALAYER SERVICE${NC}"
+    echo "=================================================================="
+    
+    # Detener solo el datalayer
+    if check_datalayer_service; then
+        echo -e "${BLUE}🛑 Deteniendo Datalayer Service...${NC}"
+        screen -S "$DATALAYER_SERVICE_NAME" -X quit
+        sleep 2
+        echo -e "${GREEN}✅ Datalayer Service detenido${NC}"
+    else
+        echo -e "${YELLOW}⚠️  El Datalayer Service no estaba ejecutándose${NC}"
+    fi
+    
+    # Iniciar solo el datalayer
+    echo -e "${BLUE}🚀 Iniciando Datalayer Service...${NC}"
+    start_docker_services
+    sleep 3
+    start_prisma_studio
+}
+
 status_all() {
     echo -e "${PURPLE}📊 ESTADO DEL SISTEMA COMPLETO${NC}"
     echo "=================================================================="
@@ -703,6 +1050,19 @@ status_all() {
         echo -e "${CYAN}     🌐 URL: http://161.132.45.154:$DATALAYER_PORT/${NC}"
     else
         echo -e "${RED}  ❌ Datalayer Service: Inactivo${NC}"
+    fi
+    
+    echo ""
+    echo -e "${CYAN}🔥 Firewall (Puerto $RAG_PORT):${NC}"
+    if check_firewall_rules; then
+        echo -e "${GREEN}  ✅ Reglas de firewall activas${NC}"
+        echo -e "${CYAN}     IPs permitidas:${NC}"
+        for ip in "${ALLOWED_IPS[@]}"; do
+            echo -e "${CYAN}       • $ip${NC}"
+        done
+    else
+        echo -e "${YELLOW}  ⚠️  Reglas de firewall no configuradas${NC}"
+        echo -e "${CYAN}     💡 Ejecuta: ./rag_system.sh firewall configure${NC}"
     fi
     
     echo "=================================================================="
@@ -935,7 +1295,9 @@ help() {
     echo -e "${YELLOW}Comandos principales:${NC}"
     echo "  start     - Iniciar TODO el sistema (recomendado)"
     echo "  stop      - Detener TODO el sistema"
-    echo "  restart   - Reiniciar TODO el sistema"
+    echo "  restart   - Reiniciar TODO el sistema (⚠️  reinicia Ollama/Qdrant)"
+    echo "  restart rag - Solo reiniciar servicio RAG (✅ NO afecta Ollama/Qdrant)"
+    echo "  restart datalayer - Solo reiniciar Datalayer Service"
     echo "  status    - Ver estado de TODO el sistema"
     echo "  check     - Verificación completa del sistema"
     echo "  validate  - Validar que todos los servicios críticos estén activos"
@@ -952,17 +1314,26 @@ help() {
     echo "  start rag        - Solo RAG Service"
     echo "  start datalayer  - Solo Datalayer Service"
     echo ""
+    echo -e "${YELLOW}Firewall:${NC}"
+    echo "  firewall configure - Configurar reglas de firewall para puerto 8000"
+    echo "  firewall remove    - Eliminar reglas de firewall"
+    echo "  firewall status    - Ver estado de reglas de firewall"
+    echo ""
     echo -e "${YELLOW}Ver logs específicos:${NC}"
     echo "  logs rag        - Logs del RAG Service"
     echo "  logs datalayer  - Logs del Datalayer"
     echo ""
     echo -e "${YELLOW}Ejemplos:${NC}"
     echo "  $0 start                    # Iniciar todo el sistema"
+    echo "  $0 restart rag              # Solo reiniciar RAG (sin afectar ingesta)"
+    echo "  $0 restart                  # Reiniciar TODO (incluye Ollama/Qdrant)"
     echo "  $0 status                   # Ver estado completo"
     echo "  $0 check                    # Verificación completa"
     echo "  $0 monitor 60               # Monitorear cada minuto"
     echo "  $0 logs rag                # Ver logs del RAG"
     echo "  $0 start qdrant            # Solo Qdrant"
+    echo "  $0 firewall configure     # Configurar firewall"
+    echo "  $0 firewall status        # Ver estado del firewall"
     echo ""
     echo -e "${CYAN}URLs del sistema:${NC}"
     echo "  • Asistente RAG: http://161.132.45.154:$RAG_PORT/"
@@ -1006,7 +1377,29 @@ case "${1:-start}" in
         stop_all
         ;;
     restart)
-        restart_all
+        if [ -n "$2" ]; then
+            case "$2" in
+                rag) 
+                    restart_rag_service
+                    ;;
+                datalayer) 
+                    restart_datalayer_service
+                    ;;
+                all|"")
+                    restart_all
+                    ;;
+                *) 
+                    echo -e "${RED}❌ Opción desconocida: $2${NC}"
+                    echo -e "${YELLOW}💡 Usa: restart [rag|datalayer|all]${NC}"
+                    echo -e "${CYAN}   restart rag      - Solo reinicia el servicio RAG (NO afecta Ollama/Qdrant)${NC}"
+                    echo -e "${CYAN}   restart datalayer - Solo reinicia el Datalayer${NC}"
+                    echo -e "${CYAN}   restart all      - Reinicia TODO el sistema${NC}"
+                    exit 1
+                    ;;
+            esac
+        else
+            restart_all
+        fi
         ;;
     status)
         status_all
@@ -1032,6 +1425,18 @@ case "${1:-start}" in
             esac
         else
             echo -e "${YELLOW}💡 Especifica el servicio: logs rag o logs datalayer${NC}"
+        fi
+        ;;
+    firewall)
+        if [ -n "$2" ]; then
+            case "$2" in
+                configure) configure_firewall ;;
+                remove) remove_firewall_rules ;;
+                status) show_firewall_status ;;
+                *) echo -e "${RED}❌ Comando de firewall desconocido: $2${NC}"; echo -e "${CYAN}💡 Usa: firewall configure, firewall remove, o firewall status${NC}"; exit 1 ;;
+            esac
+        else
+            echo -e "${YELLOW}💡 Especifica la acción: firewall configure, firewall remove, o firewall status${NC}"
         fi
         ;;
     help|--help|-h)
