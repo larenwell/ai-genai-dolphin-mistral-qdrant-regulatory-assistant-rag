@@ -100,9 +100,14 @@ class MetadataReranker:
             
             # Normalize final_score if configured
             # (boost factors can make score > 1.0, but we want to display as percentage)
-            if self.reranking_config.get("normalize_scores", True):
-                max_score = self.reranking_config.get("max_score", 1.0)
-                final_score = min(final_score, max_score)
+            # if self.reranking_config.get("normalize_scores", True):
+            #    max_score = self.reranking_config.get("max_score", 1.0)
+            #    final_score = min(final_score, max_score)
+
+            # ✨ CORREGIDO: NO normalizar internamente
+            # Dejamos que final_score > 1.0 para preservar información de ranking
+            # La normalización se hará solo al mostrar en UI (app.py)
+            
             
             # Store final score
             chunk_copy = chunk if isinstance(chunk, dict) else {
@@ -119,10 +124,12 @@ class MetadataReranker:
         scored_chunks.sort(key=lambda x: x['final_score'], reverse=True)
         
         # Filter by minimum threshold
-        min_threshold = self.reranking_config.get("min_score_threshold", 0.40)
+        min_threshold = self.reranking_config.get("min_score_threshold", 0.50) #Antes 0.4
         
-        # IMPORTANT: Si después del filtro no quedan chunks, mantener al menos el top 1
-        # para evitar que el contexto quede vacío cuando hay información relevante
+
+        # ✨ NOTA: final_score puede ser > 1.0 debido a boosts
+        # Filtrar usando threshold absoluto (0.50 funciona bien incluso con boosts)
+       
         filtered_chunks = [c for c in scored_chunks if c['final_score'] >= min_threshold]
         
         if not filtered_chunks and scored_chunks:

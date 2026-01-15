@@ -324,9 +324,21 @@ def format_sources_for_display(context_results):
             # Score formatting
             # Normalizar score usando configuración centralizada
             # (los boost factors pueden hacer que final_score > 1.0)
-            max_score = RERANKING_CONFIG.get("max_score", 1.0)
-            normalized_score = min(float(score), max_score)
-            score_percentage = int(normalized_score * 100)
+            # max_score = RERANKING_CONFIG.get("max_score", 1.0)
+            # normalized_score = min(float(score), max_score)
+
+            # Score formatting
+            # ✨ CORREGIDO: Normalizar SOLO para display
+            # final_score puede ser > 1.0 internamente (preserva ranking)
+            # Aquí normalizamos solo para mostrar como porcentaje
+
+            if RERANKING_CONFIG.get("normalize_for_display", True):
+                max_display_score = RERANKING_CONFIG.get("max_score", 1.0)
+                display_score = min(float(score), max_display_score)
+            else:
+                display_score = float(score)
+
+            score_percentage = int(display_score * 100)
             relevance_icon = get_relevance_icon(score_percentage)
             
             source_line = f"{i}. {relevance_icon} **`{title}`**{header_info} _(relevancia: {score_percentage}%)_\n"

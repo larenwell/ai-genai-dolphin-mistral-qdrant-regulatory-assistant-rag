@@ -400,13 +400,18 @@ FILTER_BUILDER_CONFIG = {
 
 RERANKING_CONFIG = {
     # Relevance thresholds
-    "min_score_threshold": 0.40,     # Filtrar chunks con score < 0.40 (ajustado - era muy restrictivo)
+    "min_score_threshold": 0.50,     # Filtrar chunks con score < 0.40 (ajustado - era muy restrictivo)
     "high_relevance_threshold": 0.80,
     
     # Score normalization
-    "normalize_scores": True,         # Normalizar scores a máximo 1.0 después de aplicar boosts
+    "normalize_scores": False,        # ✨ CAMBIADO: NO normalizar internamente (preserva ranking)
+    "normalize_for_display": True,    # ✨ NUEVO: Solo normalizar al mostrar en UI - min()
     "max_score": 1.0,                 # Score máximo permitido (para evitar > 100% en display)
     
+    # NOTA: Los boost factors pueden generar final_score > 1.0 (máximo ~3.5x)
+    # Estrategia: NO normalizar internamente para preservar diferencias relativas
+    # Solo normalizar al convertir a porcentaje en la UI
+
     # Deduplication
     "deduplicate": True,
     "dedup_key": "chunk_index",      # Evitar chunks duplicados del mismo doc
