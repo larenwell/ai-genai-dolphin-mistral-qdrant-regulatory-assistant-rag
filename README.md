@@ -1,384 +1,738 @@
-# AI Contextual RAG Assistant - Normativa Sincro
+# Asistente de Normativa - Sistema RAG Completo
 
-## Project Description
+## 📋 Descripción General
 
-This project implements a **Contextual Retrieval-Augmented Generation (RAG)** system designed for regulatory compliance assistance. The system features a **Spanish user interface** with **English knowledge base storage**, providing multilingual support while maintaining optimal search performance.
+Sistema de Asistente Virtual Inteligente para consultas sobre normativa técnica en español, implementado con **RAG (Retrieval-Augmented Generation)** y optimizado para el flujo de trabajo de base de conocimiento en inglés y respuestas en español.
 
-**Key Innovation**: This implementation uses a **hybrid language approach** where documents are processed and stored in English for optimal search, while user interactions occur entirely in Spanish, with intelligent translation handling throughout the workflow.
+**Versión:** v0.2.1  
+**Última Actualización:** 2025-01-05
 
-## Scope
+---
 
-The system encompasses the following key areas:
+## 🎯 Características Principales
 
-- **Multilingual RAG System**: Spanish UI with English knowledge base for optimal search
-- **Document Processing**: PDF extraction and analysis using Mistral OCR
-- **Intelligent Translation**: Automatic language detection and translation between Spanish and English
-- **Vector Search**: Semantic similarity search using Pinecone vector database
-- **AI-Powered Responses**: Contextual answers using Groq LLM models
-- **Professional UI**: Clean, modern interface built with Chainlit
-- **REST API**: FastAPI backend for programmatic access
-- **Quality Assurance**: Comprehensive evaluation framework
+### Procesamiento de Documentos
+- ✅ **Extracción Inteligente**: Procesamiento de PDFs y DOCX usando Mistral OCR
+- ✅ **Soporte para Documentos Grandes**: División automática de PDFs > 1000 páginas o > 100MB
+- ✅ **Preservación de Estructura**: Mantiene formato, tablas, imágenes y estructura jerárquica
+- ✅ **Conversión a Markdown**: Normalización a formato Markdown estructurado
+- ✅ **Detección de Idioma**: Automática (español/inglés)
 
-## Objectives
+### Pipeline de Ingestión Completo
+- ✅ **Pipeline Modular**: 5 pasos bien definidos (metadata → conversión → extracción → traducción → ingesta)
+- ✅ **Metadata Completa**: Sistema robusto de metadata con jerarquía normativa
+- ✅ **Múltiples Métodos de Chunking**: Recursive, semantic, structural, hybrid
+- ✅ **Gestión de Duplicados**: Detección y manejo automático de documentos duplicados
+- ✅ **Archivado Automático**: Movimiento automático de markdowns procesados
 
-### Primary Objectives
-1. **Multilingual Regulatory Compliance**: Spanish interface with English document processing
-2. **Intelligent Language Handling**: Automatic translation for optimized search
-3. **Contextual Retrieval**: AI-enhanced document chunking with metadata preservation
-4. **Professional Communication**: Maintain formal, precise, and professional tone
-5. **Scalable Architecture**: Modular design for easy maintenance and extension
+### Sistema de Búsqueda Híbrida (FASE C)
+- ✅ **Búsqueda Densa (Dense)**: Búsqueda semántica vectorial con embeddings
+- ✅ **Búsqueda Sparse (BM25)**: Búsqueda por palabras clave
+- ✅ **Re-ranking con Metadata**: Priorización por legal_weight, is_primary_source, nivel jerárquico
+- ✅ **Filtros Inteligentes**: Pre-filtrado basado en código normativo, variaciones, jerarquía
+- ✅ **Parser de Consultas**: Extracción automática de normas, artículos, capítulos, secciones
+- ✅ **Composición de Contexto**: Formateo estructurado para LLM
 
-### Technical Objectives
-1. **Language Workflow**: Spanish input → English search → Spanish output
-2. **Vector Search Optimization**: Efficient semantic search with English embeddings
-3. **Metadata Preservation**: Visual elements, tables, and contextual information
-4. **Performance Optimization**: Fast response times and efficient processing
-5. **Quality Assurance**: Comprehensive evaluation framework
+### Modelos y Tecnologías
+- ✅ **Embeddings Locales**: Ollama con modelo `nomic-embed-text` (768 dimensiones)
+- ✅ **LLM**: Mistral AI (`mistral-small-latest`) para generación de respuestas
+- ✅ **Base de Datos Vectorial**: Qdrant con distancia Cosine
+- ✅ **OCR Avanzado**: Mistral OCR para extracción de texto de PDFs
 
-## Implementation Guide
+### Interfaz y Experiencia de Usuario
+- ✅ **Interfaz Web Moderna**: Chainlit con diseño responsive
+- ✅ **Clasificación de Preguntas**: 4 tipos (factual, interpretative, comparative, procedural)
+- ✅ **Respuestas Adaptativas**: Estilo de respuesta según tipo de pregunta
+- ✅ **Sistema de Fuentes**: Visualización de fuentes con relevancia y metadata
+- ✅ **Manejo de Errores**: Mensajes claros y sugerencias de seguimiento
 
-### Prerequisites
+### Traducción Automática
+- ✅ **Traducción en Tiempo Real**: Para consultas Q&A (español ↔ inglés)
+- ✅ **Traducción por Lotes**: Pipeline completo de traducción de documentos
+- ✅ **Optimización Técnica**: Especializado en documentos técnicos/legales
+- ✅ **Modo Reanudación**: Continuación automática de traducciones interrumpidas
 
-- Python 3.12 or higher
-- Groq API key for LLM access
-- Pinecone API key for vector database
-- Mistral AI API key for OCR processing
-- Docker (optional, for local services)
-- Ollama Embedding Model
+### Infraestructura y DevOps
+- ✅ **Script Unificado**: `rag_system.sh` para gestión completa del sistema
+- ✅ **Firewall Persistente**: Reglas de firewall automáticas y persistentes
+- ✅ **Gestión de Servicios**: Inicio, parada, monitoreo de todos los servicios
+- ✅ **Health Checks**: Verificación automática de servicios dependientes
+- ✅ **Docker Compose**: Orquestación de contenedores (Qdrant, PostgreSQL, Ollama, LocalStack)
 
-### Installation
+### Evaluación y Validación
+- ✅ **Evaluación RAGAS**: Métricas de calidad (context recall, answer relevancy, faithfulness)
+- ✅ **Validación de Ingestión**: Scripts de verificación de completitud
+- ✅ **Análisis de Documentos**: Detección de duplicados y análisis de calidad
+- ✅ **Reportes Automáticos**: Generación de reportes Excel y JSON
 
-1. **Clone the repository**
-   ```bash
-   git clone <repository-url>
-   cd ai-contextual-rag-asistente-normativa-sincro
-   ```
+---
 
-2. **Install dependencies**
-   ```bash
-   pip install -r requirements.txt
-   # or using uv
-   uv sync
-   ```
+## 🏗️ Arquitectura del Sistema
 
-3. **Create and activate virtual environment**
-   ```bash
-   source .venv/bin/activate
-   python --version  # should show 3.12.x
-   ```
-
-4. **Install and setup Ollama**
-   ```bash
-   # Install Ollama (if not already installed)
-   curl -fsSL https://ollama.ai/install.sh | sh
-   
-   # Pull Dolphin-Mistral model
-   ollama pull nomic-embed-text
-   ```
-
-5. **Set up environment variables**
-   Create a `.env` file in the project root:
-   ```env
-   GROQ_API_KEY=your_groq_api_key
-   PINECONE_API_KEY=your_pinecone_api_key
-   PINECONE_INDEX=your_pinecone_index_name
-   MISTRAL_API_KEY=your_mistral_api_key
-   ```
-
-### Project Structure
-
+### Arquitectura Bilingüe Única
 ```
-ai-contextual-rag-asistente-normativa-sincro/
-├── src/
-│   ├── analysis/
-│   │   └── pdf_analyzer.py                 # PDF analysis utilities
-│   ├── config/
-│   │   ├── display_config.py               # UI display configuration
-│   │   └── prompt_config.py                # LLM prompt management
-│   ├── embeddings/
-│   │   └── embedding_funcs.py              # Vector embedding management
-│   ├── evaluation/
-│   │   ├── evaluation_ragas.py             # RAG evaluation framework
-│   │   ├── run_evaluation.py               # Evaluation execution
-│   │   └── sample_questions.json           # Test questions for evaluation
-│   ├── ingestion/
-│   │   └── ingest_mistral.py               # Mistral OCR document processing
-│   ├── llm/
-│   │   └── groq_llm.py                     # Groq LLM integration
-│   ├── translation/
-│   │   └── translate.py                    # Text translation utilities
-│   ├── api_rag.py                          # FastAPI REST endpoint
-│   ├── frontend_rag.py                     # Chainlit web interface
-│   └── ingestion_manual_mistral.py         # Manual ingestion script
-├── scripts/
-│   ├── setup_pinecone_index.py             # Pinecone configuration
-│   └── setup_project_structure.py          # Project initialization
-├── tests/                                  # Test files
-├── src/output/                             # Processing results and reports
-├── chainlit.md                             # Chainlit welcome screen and CSS
-└── pyproject.toml                          # Project dependencies
+Usuario (Español) 
+    ↓
+Traducción ES→EN (query)
+    ↓
+Búsqueda Híbrida (Base de Conocimiento en Inglés)
+    ↓
+Traducción EN→ES (contexto)
+    ↓
+Generación de Respuesta (Español)
+    ↓
+Usuario (Español)
 ```
 
-## Implementation Details
+### Componentes Principales
 
-### Core Components
+#### 1. **Extracción de Documentos** (`src/extraction/`)
+- **`generate_markdown.py`**: Script principal de extracción
+- **`markdown_extraction.py`**: Controlador de extracción con Mistral OCR
+- **Características**:
+  - Extracción con Mistral OCR (modelo `mistral-ocr-latest`)
+  - Procesamiento inteligente de PDFs y DOCX
+  - Preservación de estructura (headers, tablas, listas)
+  - Conversión a Markdown normalizado
+  - Generación de metadata estructurada
+  - Soporte para documentos grandes (>1000 páginas)
+  - Validación de completitud de contenido
 
-#### 1. Language Workflow System
-- **Spanish Input**: User questions in Spanish
-- **English Translation**: Automatic translation for KB search optimization
-- **English Context**: Retrieved from English knowledge base
-- **Spanish Output**: LLM responses in Spanish for user interface
+#### 2. **Pipeline de Ingestión** (`src/ingestion/`)
+- **`ingest_pipeline.py`**: Pipeline completo de ingesta (recomendado)
+- **`test_recursive_character_chunking.py`**: Script legacy
+- **Características**:
+  - Chunking con RecursiveCharacterTextSplitter
+  - Generación de embeddings con Ollama
+  - Almacenamiento vectorial en Qdrant
+  - Metadata normalizada completa
+  - Archivado automático de markdowns procesados
+  - Verificación de duplicados opcional
 
-#### 2. Document Processing (`src/ingestion/ingest_mistral.py`)
-- **PDF Extraction**: Text, images, tables, and visual elements
-- **Content Chunking**: Intelligent document segmentation
-- **Metadata Preservation**: Visual elements, page numbers, and context
-- **English Storage**: All content stored in English for optimal search
+#### 3. **Metadata Management** (`src/metadata/`)
+- **`metadata_builder.py`**: Construcción de metadata completa
+- **`text_structure_extractor.py`**: Extracción de estructura jerárquica
+- **Características**:
+  - Metadata heredada del documento
+  - Estructura jerárquica (nivel, capítulo, sección, artículo)
+  - Propiedades de chunks (índice, tamaño, palabras)
+  - Relaciones (chunks hermanos, documento padre)
+  - Referencias y citas (full_reference, citation_format)
+  - Metadata normativa (legal_weight, is_primary_source)
 
-#### 3. Translation Module (`src/translation/translate.py`)
-- **Language Detection**: Automatic Spanish/English identification
-- **Bidirectional Translation**: Spanish ↔ English conversion
-- **Search Optimization**: English queries for English KB
-- **Response Localization**: Spanish output for Spanish UI
+#### 4. **Embeddings y Vectorización** (`src/embeddings/`)
+- **`embedding_qdrant.py`**: Controlador de embeddings con Qdrant
+- **Características**:
+  - Generación de embeddings con Ollama `nomic-embed-text`
+  - Almacenamiento vectorial en Qdrant
+  - Búsqueda de similitud semántica (Cosine)
+  - Configuración: 768 dimensiones
+  - Creación automática de colecciones
+  - Manejo robusto de errores con retry
 
-#### 4. Vector Search System (`src/embeddings/embedding_funcs.py`)
-- **Nomic Embeddings**: `nomic-embed-text` model for vector generation
-- **Pinecone Integration**: Vector database for similarity search
-- **Metadata Indexing**: Visual elements and contextual information
-- **Semantic Search**: Context-aware document retrieval
+#### 5. **Sistema de Retrieval Híbrido** (`src/retrieval/`) - **FASE C**
+- **`hybrid_search.py`**: Motor de búsqueda híbrida principal
+- **`query_parser.py`**: Parser de consultas (normas, artículos, keywords)
+- **`filter_builder.py`**: Construcción de filtros Qdrant inteligentes
+- **`sparse_encoder.py`**: Codificación BM25 para búsqueda sparse
+- **`metadata_reranker.py`**: Re-ranking con metadata (legal_weight, level, etc.)
+- **`context_composer.py`**: Composición de contexto estructurado
+- **Características**:
+  - Pipeline completo: Parse → Filter → Dense → Sparse → Re-rank → Compose
+  - Extracción de entidades (normas, artículos, capítulos, secciones)
+  - Filtros inteligentes con variaciones de código
+  - Búsqueda híbrida (dense + sparse)
+  - Re-ranking con bonificaciones de metadata
+  - Composición de contexto optimizada para LLM
 
-#### 5. LLM Integration (`src/llm/groq_llm.py`)
-- **Groq API**: `llama-3.3-70b-versatile` model
-- **Prompt Management**: Centralized prompt configuration
-- **Language Control**: Ensures Spanish responses
-- **Context Processing**: Handles English input, generates Spanish output
+#### 6. **Modelos de Lenguaje** (`src/llm/`)
+- **`mistral_llm.py`**: Integración con Mistral AI
+- **Características**:
+  - Integración con Mistral AI (`mistral-small-latest`)
+  - Prompts centralizados y configurables
+  - Respuestas siempre en español
+  - Sistema de prompts por tipo de pregunta
+  - Optimización para contexto RAG
 
-#### 6. User Interface (`src/frontend_rag.py`)
-- **Chainlit Framework**: Modern chat interface
-- **Spanish Localization**: Complete Spanish UI
-- **Source Display**: Clean source attribution
-- **Responsive Design**: Professional and accessible interface
+#### 7. **Interfaz de Usuario** (`src/ui/`)
+- **`app.py`**: Aplicación Chainlit principal
+- **Características**:
+  - Frontend web con Chainlit
+  - Clasificación automática de tipos de pregunta
+  - Sistema de traducción integrado
+  - Formateo adaptativo de respuestas
+  - Visualización de fuentes con relevancia
+  - Manejo de errores y sugerencias
 
-#### 7. REST API (`src/api_rag.py`)
-- **FastAPI Backend**: Programmatic access to RAG system
-- **Language Workflow**: Same multilingual logic as frontend
-- **Error Handling**: Comprehensive error management
-- **Response Formatting**: Structured API responses
+#### 8. **Traducción** (`src/translation/`)
+- **`translate_retrieval.py`**: Traducción en tiempo real para Q&A
+- **`translate_pipeline.py`**: Pipeline de traducción por lotes
+- **`translate_document.py`**: Clase principal de traducción
+- **`translate_documents_batch.py`**: Script de traducción masiva
+- **Características**:
+  - Traducción ES↔EN en tiempo real
+  - Traducción por lotes optimizada
+  - Modo reanudación automática
+  - Optimización para documentos técnicos/legales
 
-### Key Features
+#### 9. **Utilidades** (`src/utils/`)
+- **`excel_parser_base_conocimiento.py`**: Parser de Excel de base de conocimiento
+- **`excel_parser_catalogo_metadata.py`**: Parser de catálogo de metadata
+- **Características**:
+  - Generación de metadata desde Excel
+  - Detección y manejo de duplicados
+  - Validación de estructura de datos
+  - Exportación a JSON normalizado
 
-#### Multilingual Support
-- **Spanish Interface**: Complete user experience in Spanish
-- **English Knowledge Base**: Optimal search performance
-- **Automatic Translation**: Seamless language handling
-- **Consistent Experience**: Same workflow in both languages
+#### 10. **Conversión** (`src/conversion/`)
+- **`docx_to_pdf.py`**: Conversión de DOC/DOCX a PDF
+- **Características**:
+  - Conversión automática con LibreOffice
+  - Backup de archivos originales
+  - Preparación para pipeline de extracción
 
-#### Document Processing
-- **Visual Elements**: Images, tables, and diagrams preserved
-- **Metadata Rich**: Page numbers, chunk types, and context
-- **Intelligent Chunking**: Context-aware document segmentation
-- **Batch Processing**: Efficient handling of multiple documents
+#### 11. **Evaluación** (`src/evaluation/`)
+- **`evaluate_ragas.py`**: Evaluación con métricas RAGAS
+- **`run_evaluation.py`**: Script de ejecución de evaluación
+- **`api_rag.py`**: API para evaluación
+- **Características**:
+  - Métricas RAGAS (context recall, answer relevancy, faithfulness)
+  - Reportes comparativos
+  - Datasets de evaluación
+  - Análisis de calidad
 
-#### Search and Retrieval
-- **Semantic Search**: Context-aware document retrieval
-- **Visual Context**: Visual elements enhance search relevance
-- **Source Attribution**: Clear document and page references
-- **Relevance Scoring**: Intelligent result ranking
+#### 12. **Core** (`src/core/`)
+- **`logger.py`**: Sistema de logging centralizado
+- **`exceptions.py`**: Excepciones personalizadas
+- **`retry.py`**: Lógica de retry con exponential backoff
+- **Características**:
+  - Logging estructurado con niveles
+  - Excepciones categorizadas
+  - Retry logic con circuit breakers
+  - Configuración centralizada
 
-#### User Experience
-- **Professional UI**: Clean, modern interface design
-- **Responsive Design**: Works on all device sizes
-- **Source Display**: Clear attribution and references
-- **Error Handling**: Graceful error recovery
+#### 13. **Configuración** (`config/`)
+- **`settings.py`**: Configuración centralizada con Pydantic
+- **`retrieval_config.py`**: Configuración del sistema de retrieval
+- **`prompt_config.py`**: Prompts del sistema por idioma
+- **`display_config.py`**: Configuración de visualización UI
+- **Características**:
+  - Validación automática de configuración
+  - Type safety con Pydantic
+  - Valores por defecto documentados
+  - Configuración modular por componente
 
-### Configuration
+---
 
-#### Environment Variables
-```env
-GROQ_API_KEY=your_groq_api_key
-PINECONE_API_KEY=your_pinecone_api_key
-PINECONE_INDEX=your_pinecone_index_name
+## 📦 Requisitos del Sistema
+
+### Dependencias del Sistema
+- **Python 3.12+** - Lenguaje principal
+- **uv** - Gestor de paquetes Python moderno
+- **Node.js** - Runtime para herramientas de desarrollo
+- **npm/npx** - Gestor de paquetes Node.js
+- **Docker** - Contenedores para servicios
+- **Docker Compose** - Orquestación de contenedores
+- **LibreOffice** - Para conversión DOC/DOCX → PDF
+- **Memoria RAM**: 8GB+ recomendado
+
+### Versiones de Dependencias
+- **Chainlit**: <2.6.0 (versión estable)
+- **Python**: 3.12+
+- **Qdrant**: latest
+- **Ollama**: latest
+- **Mistral AI**: API v1
+
+### Variables de Entorno Requeridas
+```bash
+# Mistral AI (REQUERIDO)
 MISTRAL_API_KEY=your_mistral_api_key
+
+# Qdrant (OPCIONAL - tiene defaults)
+QDRANT_COLLECTION_NAME=normativa-asistente-kb
+QDRANT_URL=http://localhost:6333
+
+# Configuración de PDFs (OPCIONAL)
+PDF_FOLDER_PATH=../data/test
+
+# Base de Datos (OPCIONAL - para Chainlit data layer)
+DATABASE_URL=postgresql://user:password@localhost:5432/dbname
+
+# AWS LocalStack (OPCIONAL - para Chainlit data layer)
+BUCKET_NAME=my-bucket
+APP_AWS_ACCESS_KEY=random-key
+APP_AWS_SECRET_KEY=random-key
+APP_AWS_REGION=eu-central-1
+DEV_AWS_ENDPOINT=http://localhost:4566
+
+# Logging (OPCIONAL)
+LOG_LEVEL=INFO
+LOG_JSON=false
+LOG_DIR=logs/
 ```
 
-#### Model Configuration
-- **LLM Model**: `llama-3.3-70b-versatile` (Groq)
-- **Embedding Model**: `nomic-embed-text` (768 dimensions)
-- **OCR Model**: Mistral OCR for document processing
-- **Chunk Size**: Configurable text segmentation
-- **Vector Database**: Pinecone for similarity search
+---
 
-### Usage
+## 🚀 Instalación y Configuración
 
-#### Web Interface
+### 1. Clonar el Repositorio
 ```bash
-# Start the Chainlit interface
-python -m chainlit run src/frontend_rag.py
+git clone <repository-url>
+cd ai-genai-rag-asistente-normativa-sincro
 ```
 
-#### REST API
+### 2. Instalar Dependencias
 ```bash
-# Start the FastAPI server
-python src/api_rag.py
+# Instalar dependencias Python con uv
+uv sync
+
+# Activar entorno virtual
+source .venv/bin/activate
 ```
 
-#### Manual Ingestion
+### 3. Configurar Variables de Entorno
 ```bash
-# Process documents manually
-python src/ingestion_manual_mistral.py
+# Copiar template de .env (si existe)
+cp .env.example .env
+
+# Editar .env con tus valores
+nano .env
 ```
 
-#### Evaluation
+### 4. Instalar Modelo de Embeddings
 ```bash
-# Run RAG evaluation
-python src/evaluation/run_evaluation.py
+# Asegurar que Ollama esté corriendo
+./rag_system.sh start ollama
+
+# Verificar que el modelo esté disponible
+curl http://localhost:11434/api/tags | grep nomic-embed-text
 ```
 
-### Language Workflow
+### 5. Iniciar Servicios
+```bash
+# Iniciar todos los servicios
+./rag_system.sh start
 
-#### 1. User Input
-```python
-# User asks question in Spanish
-user_question = "¿Cuáles son los requisitos de seguridad?"
+# O iniciar servicios individuales
+./rag_system.sh start qdrant
+./rag_system.sh start ollama
+./rag_system.sh start postgresql
+./rag_system.sh start localstack
 ```
 
-#### 2. Language Detection & Translation
-```python
-# Detect language and translate to English for search
-if detect_language(user_question) == "spanish":
-    search_query = translate_text(user_question, "spanish", "english")
+---
+
+## 📖 Uso del Sistema
+
+### Gestión de Servicios
+
+El sistema incluye un script unificado `rag_system.sh` para gestionar todos los servicios:
+
+```bash
+# Comandos principales
+./rag_system.sh start          # Iniciar TODO el sistema
+./rag_system.sh stop           # Detener TODO el sistema
+./rag_system.sh restart        # Reiniciar TODO el sistema
+./rag_system.sh status         # Ver estado de TODO el sistema
+./rag_system.sh check          # Verificación completa del sistema
+./rag_system.sh monitor        # Monitoreo continuo (30 segundos)
+./rag_system.sh emergency      # Reinicio de emergencia
+
+# Servicios individuales
+./rag_system.sh start qdrant     # Solo Qdrant
+./rag_system.sh start ollama     # Solo Ollama
+./rag_system.sh start rag        # Solo RAG Service
+./rag_system.sh start datalayer  # Solo Datalayer Service
+
+# Ver logs
+./rag_system.sh logs rag       # Logs del RAG
+./rag_system.sh logs datalayer # Logs del Datalayer
 ```
 
-#### 3. Knowledge Base Search
-```python
-# Search English KB with English query
-context = search_knowledge_base(search_query)
+### Pipeline de Ingestión de Documentos
+
+El pipeline completo consta de 5 pasos:
+
+#### Paso 1: Preparar Metadata
+```bash
+python src/utils/excel_parser_base_conocimiento.py
+```
+- **Entrada**: `data/base-conocimiento.xlsx`
+- **Salida**: `output/metadata/source/{pestaña}/{document_id}_source.json`
+- **Características**: Detección y manejo de duplicados
+
+#### Paso 2: Convertir/Preparar PDFs
+```bash
+python src/conversion/docx_to_pdf.py
+```
+- **Entrada**: `data/input/*.{pdf,doc,docx}`
+- **Salida**: `output/datasources/{pestaña}/{document_id}_source.pdf`
+- **Backup**: `data/processed/{timestamp}/` (formato original)
+
+#### Paso 3: Generar Markdown
+```bash
+python src/extraction/generate_markdown.py
+```
+- **Entrada**: PDFs de `output/datasources/` y metadata de `output/metadata/source/`
+- **Salida**: 
+  - `output/markdown/processed_es/{pestaña}/{document_id}.md` (español)
+  - `output/markdown/processed_en/{pestaña}/{document_id}.md` (inglés)
+  - `output/metadata/extraction/{pestaña}/{document_id}_extraction.json`
+- **Características**: 
+  - Soporte para PDFs grandes (>1000 páginas)
+  - Detección automática de idioma
+  - Eliminación automática de PDFs procesados exitosamente
+
+#### Paso 4: Traducir (si aplica)
+```bash
+python src/translation/translate_pipeline.py
+```
+- **Entrada**: `output/markdown/processed_es/{pestaña}/`
+- **Salida**: 
+  - `output/markdown/processed_en/{pestaña}/{document_id}.md`
+  - `output/metadata/translation/{pestaña}/{document_id}_translated.json`
+- **Características**: Modo reanudación automática
+
+#### Paso 5: Ingestar a Qdrant
+```bash
+# Modo interactivo
+python src/ingestion/ingest_pipeline.py
+
+# Opción 1: Agregar sin verificar duplicados
+python src/ingestion/ingest_pipeline.py --option 1
+
+# Opción 2: Verificar duplicados (recomendado)
+python src/ingestion/ingest_pipeline.py --option 2
+```
+- **Entrada**: Markdowns de `output/markdown/processed_en/` y metadata completa
+- **Salida**:
+  - Qdrant collection: `normativa-asistente-kb` (definida en `.env`)
+  - `output/chunking/{pestaña}/{document_id}_recursive_character_chunks.json`
+  - `output/metadata/chunking/{pestaña}/{document_id}_chunking.json`
+  - `output/metadata/final/{pestaña}/{document_id}_final.json`
+  - `output/embeddings_preview/{pestaña}/{document_id}_recursive_character_embeddings_preview.json`
+  - `output/markdown/archived/{pestaña}_ES/` y `{pestaña}_EN/` (archivados automáticamente)
+
+**Documentación Completa**: Ver `docs/PIPELINE_INGESTA.md`
+
+### Interfaz Web
+
+```bash
+# Iniciar interfaz web Chainlit
+chainlit run src/ui/app.py --host 0.0.0.0 --port 8000
 ```
 
-#### 4. LLM Processing
-```python
-# Send English context + English question to LLM
-response = llm.rag_process_llm(
-    context=english_context,
-    question=english_question,
-    language="español"  # Ensure Spanish output
-)
+Acceder a: `http://localhost:8000/` (o `http://161.132.45.154:8000/` en producción)
+
+### Evaluación RAG
+
+```bash
+cd src/evaluation/
+python evaluate_ragas.py
 ```
 
-#### 5. Spanish Response
-```python
-# LLM responds in Spanish for user interface
-# Response: "Los requisitos de seguridad incluyen..."
+---
+
+## 🔧 Configuración Avanzada
+
+### Sistema de Retrieval Híbrido
+
+El sistema de retrieval está completamente configurado en `config/retrieval_config.py`:
+
+- **Búsqueda Densa**: Pesos configurables (dense_weight, sparse_weight)
+- **Filtros**: Pre-filtrado inteligente por código normativo
+- **Re-ranking**: Bonificaciones por legal_weight, is_primary_source, nivel jerárquico
+- **Thresholds**: Configurables para filtrado de relevancia
+- **Top-K Dinámico**: Basado en tipo de pregunta
+
+### Configuración de Chunking
+
+- **Método**: RecursiveCharacterTextSplitter (por defecto)
+- **Chunk Size**: 1000 caracteres (configurable)
+- **Chunk Overlap**: 200 caracteres (configurable)
+- **Separadores**: `["\n\n", "\n", ". ", "! ", "? ", "; ", ", ", " ", ""]`
+
+### Configuración de Embeddings
+
+- **Modelo**: `nomic-embed-text` (Ollama local)
+- **Dimensiones**: 768
+- **Distancia**: Cosine similarity
+- **Batch Size**: 10 documentos por lote
+
+### Configuración de Qdrant
+
+- **Vector Size**: 768 dimensiones
+- **Distance**: Cosine
+- **Storage**: On-disk payload
+- **Auto-creation**: Colecciones creadas automáticamente
+
+---
+
+## 📁 Estructura del Proyecto
+
+```
+ai-genai-rag-asistente-normativa-sincro/
+├── src/                              # Código fuente
+│   ├── core/                         # Módulos core compartidos
+│   │   ├── logger.py                # Sistema de logging
+│   │   ├── exceptions.py            # Excepciones personalizadas
+│   │   └── retry.py                 # Retry logic
+│   ├── extraction/                   # Extracción de documentos
+│   │   ├── generate_markdown.py     # Script principal
+│   │   └── markdown_extraction.py  # Controlador Mistral OCR
+│   ├── ingestion/                     # Ingesta a Qdrant
+│   │   ├── ingest_pipeline.py       # Pipeline completo (recomendado)
+│   │   └── test_recursive_character_chunking.py  # Legacy
+│   ├── embeddings/                   # Vectorización
+│   │   └── embedding_qdrant.py     # Controlador Qdrant
+│   ├── retrieval/                    # Sistema de búsqueda híbrida (FASE C)
+│   │   ├── hybrid_search.py         # Motor principal
+│   │   ├── query_parser.py          # Parser de consultas
+│   │   ├── filter_builder.py        # Construcción de filtros
+│   │   ├── sparse_encoder.py        # Codificación BM25
+│   │   ├── metadata_reranker.py     # Re-ranking con metadata
+│   │   └── context_composer.py       # Composición de contexto
+│   ├── llm/                          # Modelos de lenguaje
+│   │   └── mistral_llm.py           # Integración Mistral AI
+│   ├── translation/                  # Traducción automática
+│   │   ├── translate_retrieval.py  # Traducción Q&A tiempo real
+│   │   ├── translate_pipeline.py   # Pipeline de traducción
+│   │   ├── translate_document.py   # Clase principal
+│   │   └── translate_documents_batch.py  # Traducción masiva
+│   ├── ui/                           # Interfaz de usuario
+│   │   └── app.py                   # Aplicación Chainlit
+│   ├── metadata/                     # Gestión de metadata
+│   │   ├── metadata_builder.py      # Construcción de metadata
+│   │   └── text_structure_extractor.py  # Extracción de estructura
+│   ├── utils/                        # Utilidades
+│   │   ├── excel_parser_base_conocimiento.py  # Parser Excel base conocimiento
+│   │   └── excel_parser_catalogo_metadata.py  # Parser catálogo metadata
+│   ├── conversion/                   # Conversión de documentos
+│   │   └── docx_to_pdf.py           # DOC/DOCX → PDF
+│   └── evaluation/                   # Evaluación RAG
+│       ├── evaluate_ragas.py         # Métricas RAGAS
+│       ├── run_evaluation.py        # Script de evaluación
+│       └── api_rag.py               # API para evaluación
+├── config/                           # Configuración
+│   ├── settings.py                  # Configuración centralizada (Pydantic)
+│   ├── retrieval_config.py         # Configuración retrieval híbrido
+│   ├── prompt_config.py            # Prompts del sistema
+│   └── display_config.py           # Configuración UI
+├── docs/                            # Documentación
+│   ├── PIPELINE_INGESTA.md         # Documentación pipeline completo
+│   ├── MEJORAS_IMPLEMENTADAS.md    # Mejoras implementadas
+│   ├── ESTADO_MEJORAS.md           # Estado de aplicación de mejoras
+│   ├── ANALISIS_MEJORAS.md         # Análisis de mejoras pendientes
+│   └── FIREWALL_PERSISTENTE.md     # Documentación firewall
+├── output/                          # Datos generados
+│   ├── metadata/                     # Metadata por etapa
+│   │   ├── source/                 # Metadata de source
+│   │   ├── extraction/             # Metadata de extracción
+│   │   ├── translation/            # Metadata de traducción
+│   │   ├── chunking/               # Metadata intermedia
+│   │   └── final/                  # Metadata final
+│   ├── chunking/                    # Chunks generados
+│   ├── embeddings_preview/          # Preview de embeddings
+│   ├── markdown/                    # Markdowns procesados
+│   │   ├── processed_es/           # Español (temporal)
+│   │   ├── processed_en/            # Inglés (temporal)
+│   │   └── archived/               # Archivados (permanente)
+│   └── datasources/                 # PDFs temporales
+├── data/                            # Datos de entrada
+│   ├── input/                      # Archivos originales
+│   ├── processed/                  # Backups con timestamp
+│   ├── base-conocimiento.xlsx     # Fuente de verdad
+│   └── metadata/                   # Catálogos de metadata
+├── scripts/                         # Scripts utilitarios
+├── rag_system.sh                   # Script maestro de gestión
+├── .env                            # Variables de entorno
+├── pyproject.toml                  # Configuración del proyecto
+└── README.md                       # Este archivo
 ```
 
-### API Endpoints
+---
 
-#### RAG Query Endpoint
-```http
-POST /rag
-Content-Type: application/json
+## 🔐 Seguridad y Firewall
 
-{
-  "question": "¿Cuáles son los requisitos de seguridad?",
-  "language": "spanish"
-}
+El sistema incluye un firewall persistente configurado automáticamente:
+
+- **IPs Permitidas**: Configuradas en `rag_system.sh`
+- **Puerto 8000**: Solo accesible desde IPs autorizadas
+- **Persistencia**: Reglas se restauran automáticamente al reiniciar
+- **Integración**: Se configura automáticamente al iniciar servicios
+
+**Documentación Completa**: Ver `docs/FIREWALL_PERSISTENTE.md`
+
+---
+
+## 📊 Puertos y Servicios
+
+| Servicio | URL | Puerto | Descripción |
+|----------|-----|--------|-------------|
+| **Chainlit RAG** | http://localhost:8000/ | 8000 | Interfaz principal del asistente |
+| **Qdrant Dashboard** | http://localhost:6333/dashboard | 6333 | Base de datos vectorial |
+| **Prisma Studio** | http://localhost:5555/ | 5555 | Gestión de base de datos PostgreSQL |
+| **PostgreSQL** | localhost:5432 | 5432 | Base de datos principal |
+| **Ollama** | http://localhost:11434/ | 11434 | Servicio de embeddings locales |
+| **LocalStack** | http://localhost:4566/ | 4566 | Emulación de servicios AWS |
+
+---
+
+## 🧪 Testing y Validación
+
+### Script de Prueba de Consultas
+```bash
+# Probar consulta sin conectar a Qdrant
+python test_query.py "tu pregunta aquí"
+
+# Probar consulta completa (con Qdrant)
+python test_query.py --full "tu pregunta aquí"
 ```
 
-#### Response Format
-```json
-{
-  "response": "Los requisitos de seguridad incluyen...",
-  "sources": [
-    {"document": "FMDS0200.pdf", "page": 153},
-    {"document": "FMDS0201.pdf", "page": 24}
-  ],
-  "workflow_info": "Spanish input → English search → Spanish output"
-}
+### Validación de Ingestión
+```bash
+# Verificar estado de ingestión
+python scripts/validate_ingestion_status.py
 ```
 
-### Services Used
+### Evaluación RAGAS
+```bash
+cd src/evaluation/
+python evaluate_ragas.py
+```
 
-#### **Core AI Services:**
-- **Groq API**: LLM inference (`llama-3.3-70b-versatile`)
-- **Pinecone**: Vector similarity search and storage
-- **Mistral AI**: OCR and document processing
-- **Nomic AI**: Text embedding generation
+---
 
-#### **Infrastructure:**
-- **Chainlit**: Web chat interface framework
-- **FastAPI**: REST API backend
+## 🐛 Solución de Problemas
 
-#### **Cost Considerations:**
-- **Groq**: Pay-per-token for LLM inference
-- **Pinecone**: Pay-per-vector for storage and search
-- **Mistral**: Pay-per-API call for OCR processing
-- **Nomic**: Pay-per-embedding generation
+### Errores Comunes
 
-### Performance Optimization
+1. **Error de conexión a Qdrant**
+   ```bash
+   # Verificar que Qdrant esté corriendo
+   ./rag_system.sh start qdrant
+   curl http://localhost:6333/collections
+   ```
 
-#### Search Optimization
-- **English KB**: Optimal semantic search performance
-- **Vector Indexing**: Efficient similarity search
-- **Metadata Filtering**: Context-aware result filtering
-- **Caching**: Response caching for common queries
+2. **Error de API Mistral**
+   - Verificar `MISTRAL_API_KEY` en `.env`
+   - Verificar que la clave sea válida
 
-#### Processing Efficiency
-- **Batch Processing**: Efficient document ingestion
-- **Parallel Processing**: Concurrent document analysis
-- **Memory Management**: Optimized chunk processing
-- **Error Recovery**: Robust error handling
+3. **Error de Ollama**
+   ```bash
+   # Verificar que Ollama esté corriendo
+   ./rag_system.sh start ollama
+   curl http://localhost:11434/api/tags
+   ```
 
-### Security and Compliance
+4. **Error de memoria**
+   - Aumentar RAM disponible
+   - Reducir batch_size en configuración
 
-#### Data Privacy
-- **API Security**: Secure API key management
-- **No Data Retention**: No persistent storage of sensitive content
-- **Secure Communication**: Encrypted API communication
+5. **Error de puertos ocupados**
+   ```bash
+   # Verificar puertos
+   lsof -ti:8000 | xargs kill -9
+   lsof -ti:6333 | xargs kill -9
+   ```
 
-#### Regulatory Compliance
-- **Source Traceability**: Complete audit trail
-- **Visual Evidence**: Visual content preservation
-- **Metadata Tracking**: Comprehensive document metadata
+### Logs y Debugging
 
-### Monitoring and Evaluation
+- **Logs del sistema**: Ver con `./rag_system.sh logs rag`
+- **Logs de servicios**: Verificar con `docker logs <container_name>`
+- **Debug mode**: Configurar `DEBUG_MODE=true` en `.env`
 
-#### Performance Metrics
-- **Response Accuracy**: RAG response quality
-- **Search Relevance**: Document retrieval accuracy
-- **Language Quality**: Translation and response accuracy
-- **User Satisfaction**: End-user feedback
+---
 
-#### Quality Assessment
-- **RAGAS Evaluation**: Comprehensive RAG assessment
-- **Language Validation**: Translation quality verification
-- **Response Consistency**: Output consistency across queries
+## 📚 Documentación Adicional
 
-### Future Enhancements
+- **Pipeline de Ingestión**: `docs/PIPELINE_INGESTA.md`
+- **Mejoras Implementadas**: `docs/MEJORAS_IMPLEMENTADAS.md`
+- **Estado de Mejoras**: `docs/ESTADO_MEJORAS.md`
+- **Análisis de Mejoras**: `docs/ANALISIS_MEJORAS.md`
+- **Firewall**: `docs/FIREWALL_PERSISTENTE.md`
+- **Guía de Desarrollo**: `CLAUDE.md`
+- **Gestión de Servicios**: `SERVICIOS.md`
 
-#### Planned Features
-- **Advanced Visual Analysis**: Enhanced image and diagram understanding
-- **Multi-format Support**: Additional document formats
-- **Real-time Processing**: Live document processing
-- **Integration APIs**: Third-party system integration
+---
 
-#### Technical Improvements
-- **Enhanced Embeddings**: Specialized models for technical content
-- **Advanced Search**: Multi-modal search capabilities
-- **Performance Optimization**: Faster processing and reduced costs
-- **Extended Evaluation**: Comprehensive quality assessment
+## 🎯 Roadmap y Próximas Mejoras
 
-## Support and Maintenance
+### Implementado ✅
+- ✅ Sistema de logging centralizado
+- ✅ Configuración centralizada con Pydantic
+- ✅ Manejo de errores con excepciones personalizadas
+- ✅ Retry logic con exponential backoff
+- ✅ Sistema de búsqueda híbrida completo
+- ✅ Pipeline de ingesta modular
+- ✅ Firewall persistente
+- ✅ Gestión unificada de servicios
 
-### Troubleshooting
-- **API Configuration**: Verify API keys and permissions
-- **Document Format**: Ensure PDF compatibility
-- **Processing Errors**: Check error logs and recovery options
-- **Performance Issues**: Monitor resource usage and optimization
+### Pendiente 🔄
+- ⏳ Integración completa de mejoras en módulos principales
+- ⏳ Cache de embeddings
+- ⏳ Tests unitarios y de integración
+- ⏳ Métricas y analytics
+- ⏳ Async/await para operaciones I/O
+- ⏳ Validación de entrada de usuario
+- ⏳ Rate limiting
 
-### Maintenance Tasks
-- **Regular Updates**: Keep dependencies and models current
-- **Performance Monitoring**: Track processing efficiency
-- **Quality Assurance**: Regular evaluation of output quality
-- **Documentation Updates**: Keep implementation guides current
+Ver `docs/ANALISIS_MEJORAS.md` y `docs/ESTADO_MEJORAS.md` para detalles completos.
 
-This implementation provides a robust, scalable solution for multilingual regulatory compliance assistance with intelligent language handling and professional user experience. The **hybrid language approach** ensures optimal search performance while maintaining complete Spanish localization for end users.
+---
+
+## 👥 Contribución
+
+1. Fork el proyecto
+2. Crear una rama feature (`git checkout -b feature/AmazingFeature`)
+3. Commit los cambios (`git commit -m 'Add some AmazingFeature'`)
+4. Push a la rama (`git push origin feature/AmazingFeature`)
+5. Abrir un Pull Request
+
+---
+
+## 📄 Licencia
+
+Este proyecto está bajo la Licencia MIT. Ver `LICENSE` para más detalles.
+
+---
+
+## 📧 Contacto
+
+- **Desarrollador**: Laren Osorio Toribio
+- **Email**: losorio@rcp.pe
+- **Organización**: RCP
+
+---
+
+## 📝 Changelog
+
+### v0.2.1 (2025-01-05)
+- ✅ Sistema de búsqueda híbrida completo (FASE C)
+- ✅ Pipeline de ingesta modular y robusto
+- ✅ Sistema de metadata completo con jerarquía normativa
+- ✅ Firewall persistente y gestión unificada de servicios
+- ✅ Corrección de bugs en retrieval (threshold, code matching)
+- ✅ Documentación completa del pipeline
+- ✅ Script de prueba de consultas
+
+### v0.2.0
+- ✅ Nueva colección Qdrant: `normativa-asistente-kb`
+- ✅ Sistema de validación de ingestión
+- ✅ Organización de salidas en `output/`
+- ✅ Mejoras en ingestión con Mistral OCR
+- ✅ Configuración centralizada
+- ✅ Análisis de documentos
+
+### v0.1.0
+- ✅ Migración completa de Pinecone a Qdrant
+- ✅ Migración de Groq a Mistral AI
+- ✅ Implementación de flujo inglés KB + español Q&A
+- ✅ Interfaz web con Chainlit
+- ✅ Sistema de evaluación RAG
+- ✅ Procesamiento OCR con Mistral
+- ✅ Chunking contextualizado inteligente
+
+---
+
+**Última Actualización**: 2025-01-05

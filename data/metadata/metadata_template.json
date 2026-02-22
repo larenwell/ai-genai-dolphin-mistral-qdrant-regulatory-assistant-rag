@@ -1,0 +1,199 @@
+{
+    "document_id": "LEY_29783_2011",
+    "metadata_version": "3.0",
+    "generated_at": "2025-01-20T15:30:00Z",
+    "sources": {
+      "client_metadata": true,
+      "elastika_metadata": true,
+      "merged_at": "2025-01-20T15:30:00Z"
+    },
+    
+    "document_metadata": {
+      "general": {
+        "document_id": "LEY_29783_2011",
+        "source_file": "Ley 29783.pdf",
+        "book_title": "Ley de Seguridad y Salud en el Trabajo",
+        "source_file_hash": "sha256:a3f2b9c1d4e5f6a7b8c9d0e1f2a3b4c5",
+        "language": "es",
+        "total_pages": 222,
+        "file_size_mb": 14.4
+      },
+
+      "extraction_information": {
+        "markdown_length": 505425,
+        "docx_conversion": false,
+        "translated_en": false,
+        "text_extraction_method": "mistral_ocr",
+        "mistral_ocr": true
+      },
+      
+      "normative_info": {
+        "code": "Ley 29783",
+        "full_name": "Ley de Seguridad y Salud en el Trabajo",
+        "edition": "2011",
+        "provider": "CONGRESO",
+        "provider_full_name": "Congreso de la República del Perú",
+        "country": "PE",
+        "scope": "national",
+        "status": "vigente"
+      },
+      
+      "normative_hierarchy": {
+        "jerarquia_normativa": 2,
+        "legal_weight": 900,
+        "is_primary_source": true,
+        "is_base_regulation": true,
+        "code_variations": ["Ley 29783", "Ley N° 29783", "L. 29783"],
+        "regulates": ["DS_005-2012-TR", "RM_249-2017-TR"],
+        "regulated_by": null,
+        "thematic_area": "seguridad_salud_trabajo"
+      },
+      
+      "document_classification": {
+        "tipo_principal": "ley_organica",
+        "tipo_secundario": "ley_organica_sst",
+        "sector": "seguridad_industrial",
+        "disciplina": "seguridad_ocupacional",
+        "aplicabilidad": ["construccion", "mineria", "industria"]
+      },
+      
+      "temporal_context": {
+        "publication_date": "2011-08-20",
+        "effective_date": "2011-08-21",
+        "expiration_date": null,
+        "supersedes": "Ley 28806",
+        "superseded_by": null,
+        "ingestion_date": "2025-01-20T10:30:00Z",
+        "last_updated": "2025-01-20T10:30:00Z",
+        "version_hash": "v1_a3f2b9c1"
+      },
+      
+      "relationships_document": {
+        "related_standards": ["DS 005-2012-TR", "RM 249-2017-TR"],
+        "complementary_norms": ["ISO 45001", "OHSAS 18001"],
+        "conflicts_with": [],
+        "derived_from": null,
+        "parent_document_id": "LEY_29783_2011"
+      }
+    },
+    
+    "chunking_statistics": {
+      "total_chunks": 128,
+      "char_stats": {
+        "mean": 742.1,
+        "median": 795.5,
+        "min": 41,
+        "max": 998,
+        "stdev": 232.68
+      },
+      "word_stats": {
+        "mean": 118.3,
+        "median": 120.0,
+        "min": 5,
+        "max": 258
+      }
+    },
+    
+    "chunking_configuration": {
+      "chunking_method": "recursive_character",
+      "chunk_size": 1000,
+      "chunk_overlap": 200,
+      "model": "nomic-embed-text",
+      "embedding_dimension": 768,
+      "separators": ["\n\n", "\n", ". ", "! ", "? ", "; ", ", ", " ", ""]
+    },
+    
+    "chunks": [
+      {
+        "content": "Artículo 49.- El empleador debe garantizar...",
+        
+        "metadata": {
+          "document_id": "LEY_29783_2011",
+          "source_file": "Ley 29783.pdf",
+          "book_title": "Ley de Seguridad y Salud en el Trabajo",
+          "language": "es",
+          
+          "code": "Ley 29783",
+          "full_name": "Ley de Seguridad y Salud en el Trabajo",
+          "edition": "2011",
+          "provider": "CONGRESO",
+          "provider_full_name": "Congreso de la República del Perú",
+          "country": "PE",
+          "scope": "national",
+          "status": "vigente",
+          
+          "jerarquia_normativa": 2,
+          "legal_weight": 900,
+          "is_primary_source": true,
+          "is_base_regulation": true,
+          "thematic_area": "seguridad_salud_trabajo",
+          
+          "tipo_principal": "ley_organica",
+          "tipo_secundario": "ley_organica_sst",
+          "sector": "seguridad_industrial",
+          "disciplina": "seguridad_ocupacional",
+          "aplicabilidad": ["construccion", "mineria", "industria"],
+          
+          "hierarchy": {
+            "level": 1,
+            "level_name": "articulo",
+            "chapter": "5",
+            "chapter_title": "Obligaciones del Empleador",
+            "section": null,
+            "section_title": null,
+            "subsection": null,
+            "subsection_title": null,
+            "article": "49",
+            "article_title": "Obligaciones del Empleador",
+            "full_reference": "Ley 29783:2011, Art. 49"
+          },
+          
+          "chunk_index": 45,
+          "total_chunks": 128,
+          "chunk_size": 625,
+          "chunk_words": 96,
+          "chunking_method": "recursive_character",
+          "target_chunk_size": 1000,
+          "chunk_overlap": 200,
+          "is_header_chunk": false,
+          "is_table_chunk": false,
+          "is_list_chunk": true,
+          "has_citations": false,
+          
+          "topic_category": "gestion_sst",
+          "subtopics": ["comites_sst", "auditorias_inspecciones"],
+          "keywords_manual": ["comite_seguridad", "supervisor_sst"],
+          "keywords_auto": ["capacitacion", "empleador", "seguridad"],
+          "entities": {
+            "equipment": [],
+            "materials": [],
+            "measurements": [],
+            "standards_cited": []
+          },
+          
+          "publication_date": "2011-08-20",
+          "effective_date": "2011-08-21",
+          "expiration_date":null,
+          "supersedes": "Ley 28806",
+          "ingestion_date": "2025-01-15T14:23:00Z",
+          "last_updated": "2025-01-15T14:23:00Z",
+          "version_hash": "v1_a3f2b9c1",
+          
+          "related_standards": ["DS 005-2012-TR", "RM 249-2017-TR"],
+          "complementary_norms": ["ISO 45001"],
+          "parent_document_id": "LEY_29783_2011",
+          "sibling_chunks": [44, 46],
+          
+          "citation_format": "Ley 29783:2011, Artículo 49",
+          "short_citation": "Ley 29783 (2011) Art. 49",
+          "display_title": "Obligaciones del Empleador",
+          "priority_level": "high"
+        }
+      },
+      
+      {
+        "content": "a) Al momento de la contratación...",
+        "metadata": {}
+      }
+    ]
+  }

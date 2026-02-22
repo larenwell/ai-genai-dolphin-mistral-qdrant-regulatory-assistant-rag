@@ -1,7 +1,7 @@
 [project]
-name = "asistente-normativa-prototipo"
+name = "ai-genai-rag-asistente-normativa-sincro"
 version = "0.1.0"
-description = "Asistente virtual de normativa en español"
+description = "Asistente virtual de normativa"
 authors = [{ name = "Laren Osorio Toribio", email = "losorio@rcp.pe" }]
 requires-python = ">=3.12"
 
@@ -11,6 +11,7 @@ dependencies = [
   "sentence-transformers",
   "qdrant-client",
   "langchain",
+  "langchain-experimental",
   "transformers",
   "accelerate",
   "ollama",
@@ -22,18 +23,25 @@ dependencies = [
   "huggingface_hub",
   "gradio",
   "tiktoken",
-  "chainlit",
+  "chainlit<2.6.0",
   "langchain-ollama",
   "langchain-community",
-  "pinecone",
   "mistralai",
   "openpyxl",
   "pypdf2",
   "ragas",
-  "groq",
   "asyncpg",
   "boto3",
-  "translate"
+  "translate",
+  "psutil",
+  "requests",
+  "python-docx>=1.2.0",
+  "langdetect>=1.0.9",
+  "docx2txt>=0.9",
+  "docx2pdf>=0.1.8",
+  "reportlab>=4.0.0",
+  "pydantic>=2.0.0",
+  "pydantic-settings>=2.0.0",
 ]
 
 [tool.uv]
